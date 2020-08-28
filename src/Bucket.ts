@@ -55,10 +55,13 @@ class Bucket extends EventEmitter {
   }
 
   /**
-   * Determine how long the bucket block is from request headers
-   * Returns seconds.
+   * Determine how long the bucket block is in ms from request headers
+   * 
+   * Returns -1 if no block duration is found in headers
+   * 
+   * @returns {number} Milliseconds
    */
-  static getBucketBlockDuration (headers: Headers): number {
+  static getBucketBlockDurationMs (headers: Headers): number {
     const {
       RATELIMIT_REMAINING,
       RATELIMIT_RESET_AFTER
@@ -66,11 +69,11 @@ class Bucket extends EventEmitter {
     const rateLimitRemaining = Number(headers.get(RATELIMIT_REMAINING))
     if (rateLimitRemaining === 0) {
       // Reset-After contains seconds
-      const resetAfter = Number(headers.get(RATELIMIT_RESET_AFTER)) * 1000
-      if (isNaN(resetAfter)) {
+      const resetAfterMs = Number(headers.get(RATELIMIT_RESET_AFTER)) * 1000
+      if (isNaN(resetAfterMs)) {
         return -1
       } else {
-        return resetAfter
+        return resetAfterMs
       }
     }
     return -1
@@ -87,29 +90,37 @@ class Bucket extends EventEmitter {
   }
 
   /**
-   * Determine how long the global block is from request headers
+   * Determine how long in ms the global block is from request headers
+   * 
+   * Returns -1 if no block duration is found in headers
+   * 
+   * @returns {number} Milliseconds
    */
-  static getGlobalBlockDuration (headers: Headers): number {
+  static getGlobalBlockDurationMs (headers: Headers): number {
     const {
       RETRY_AFTER
     } = Bucket.constants
-    const retryAfter = Number(headers.get(RETRY_AFTER))
-    if (!isNaN(retryAfter)) {
-      return retryAfter
+    const retryAfterMs = Number(headers.get(RETRY_AFTER))
+    if (!isNaN(retryAfterMs)) {
+      return retryAfterMs
     }
     return -1
   }
 
   /**
-   * Determine how long to block this bucket from request
-   * headers before executing any further requests
+   * Determine how long to block this bucket in ms from
+   * request headers before executing any further requests
+   * 
+   * Returns -1 if no block duration is found in headers
+   * 
+   * @returns {number} Milliseconds
    */
   static getBlockedDuration (headers: Headers): number {
     // Global limits take priority
     if (this.isGloballyBlocked(headers)) {
-      return this.getGlobalBlockDuration(headers)
+      return this.getGlobalBlockDurationMs(headers)
     } else if (this.hasBucketLimits(headers)) {
-      return this.getBucketBlockDuration(headers)
+      return this.getBucketBlockDurationMs(headers)
     } else {
       return -1
     }
@@ -247,18 +258,18 @@ class Bucket extends EventEmitter {
    */
   private async handle429Response (apiRequest: APIRequest, res: Response): Promise<Response> {
     const { headers } = res
-    const blockedDuration = Bucket.getBlockedDuration(headers)
+    const blockedDurationMs = Bucket.getBlockedDuration(headers)
     this.emit('429', apiRequest)
     this.debug(`429 hit for ${apiRequest.toString()}`)
-    if (blockedDuration === -1) {
+    if (blockedDurationMs === -1) {
       throw new Error('429 response')
     }
     if (Bucket.isGloballyBlocked(headers)) {
       this.debug(`Global limit was hit after ${apiRequest.toString()}`)
-      this.emit('globalLimit', blockedDuration)
+      this.emit('globalLimit', blockedDurationMs)
     }
-    this.debug(`Blocking for ${blockedDuration} seconds after 429 response for ${apiRequest.toString()}`)
-    this.block(blockedDuration)
+    this.debug(`Blocking for ${blockedDurationMs}ms after 429 response for ${apiRequest.toString()}`)
+    this.block(blockedDurationMs)
     const futureResult = await this.delayExecution(apiRequest)
     return futureResult
   }
@@ -268,10 +279,10 @@ class Bucket extends EventEmitter {
    */
   private async handleResponse (apiRequest: APIRequest, res: Response): Promise<Response> {
     this.debug(`Non-429 response for ${apiRequest.toString()}`)
-    const blockedDuration = Bucket.getBlockedDuration(res.headers)
-    if (blockedDuration !== -1) {
-      this.debug(`Blocking for ${blockedDuration}s after non-429 response for ${apiRequest.toString()}`)
-      this.block(blockedDuration)
+    const blockedDurationMs = Bucket.getBlockedDuration(res.headers)
+    if (blockedDurationMs !== -1) {
+      this.debug(`Blocking for ${blockedDurationMs}ms after non-429 response for ${apiRequest.toString()}`)
+      this.block(blockedDurationMs)
     }
     return res
   }
