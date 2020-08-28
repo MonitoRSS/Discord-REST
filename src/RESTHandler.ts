@@ -137,7 +137,7 @@ class RESTHandler extends EventEmitter {
       // Return the temporary bucket if there are enqueued items to maintain order
       // The temporary bucket will eventually be removed once the queue is empty
       const temporaryBucket = this.temporaryBucketsByUrl.get(url)
-      if (temporaryBucket?.hasPendingRequests()) {
+      if (temporaryBucket && temporaryBucket.hasPendingRequests()) {
         return temporaryBucket
       }
       return bucket
