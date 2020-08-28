@@ -3,27 +3,37 @@ import { RequestInit, Response } from "node-fetch";
 import APIRequest from "./APIRequest";
 import { EventEmitter } from "events";
 
+/**
+ * The entry point for all requests
+ */
 class RESTHandler extends EventEmitter {
+  /**
+   * Buckets mapped by IDs, where the IDs are the routes
+   * themselves. This is the default bucket type that is
+   * used for every route until their actual bucket is
+   * known after a fetch.
+   */
   temporaryBucketsByUrl: Map<string, Bucket>
+  /**
+   * Buckets mapped by their IDs, where the IDs are the
+   * ones returned by Discord.
+   */
   buckets: Map<string, Bucket>
+  /**
+   * Buckets mapped by the route URLs. These buckets are
+   * considered the "true" buckets for their specified
+   * routes since their IDs were returned by Discord.
+   * 
+   * This is a convenience map that is made alongside
+   * the "buckets" instance variable whenever subsequent
+   * requests are made.
+   */
   bucketsByUrl: Map<string, Bucket>
 
   constructor () {
     super()
-    /**
-     * Routes that don't yet have a bucket ID assigned
-     * @type {Map<string, import('./Bucket.js')>}
-     */
     this.temporaryBucketsByUrl = new Map()
-    /**
-     * Buckets by ID
-     * @type {Map<string, import('./Bucket.js')>}
-     */
     this.buckets = new Map()
-    /**
-     * Buckets by URL
-     * @type {Map<string, import('./Bucket.js')>}
-     */
     this.bucketsByUrl = new Map()
   }
 
@@ -151,6 +161,13 @@ class RESTHandler extends EventEmitter {
     }
   }
 
+  /**
+   * Fetch a resource from Discord's API
+   * 
+   * @param route The full HTTP route string
+   * @param options node-fetch options
+   * @returns node-fetch response
+   */
   public async fetch (route: string, options: RequestInit): Promise<Response> {
     const apiRequest = new APIRequest(route, options)
     const url = apiRequest.route

@@ -4,11 +4,34 @@ import { Headers, Response } from 'node-fetch';
 import { Debugger } from 'debug';
 import { createBucketDebug } from './util/debug';
 
+/**
+ * Handles the queueing of requests of a particular bucket
+ */
 class Bucket extends EventEmitter {
+  /**
+   * The bucket ID. If it is a temporary bucket whose actual
+   * ID has not been returned from Discord, it would be the
+   * route string itself. Otherwise, it's the bucket ID 
+   * returned by Discord in the X-RateLimit-Bucket header.
+   */
   id: string
+  /**
+   * The date until this bucket can start processing requests
+   * within its queue again.
+   */
   blockedUntil?: Date
+  /**
+   * A timer that clears blockedUntil to allow processing
+   * again
+   */
   private timer?: NodeJS.Timeout
+  /**
+   * The queue of pending API requests
+   */
   private readonly queue: APIRequest[] = []
+  /**
+   * Debug logger
+   */
   private readonly debug: Debugger
 
   constructor (id: string) {
@@ -17,6 +40,9 @@ class Bucket extends EventEmitter {
     this.debug = createBucketDebug(id)
   }
 
+  /**
+   * Discord header constants
+   */
   // eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
   static get constants () {
     return {
@@ -181,6 +207,7 @@ class Bucket extends EventEmitter {
 
   /**
    * Wait for previous API requests to finish
+   * 
    * @param {import('./APIRequest.JS')} apiRequest
    */
   private async waitForRequest (apiRequest: APIRequest): Promise<void> {
@@ -194,6 +221,8 @@ class Bucket extends EventEmitter {
 
   /**
    * Queue up an API request for execution.
+   * 
+   * @returns Node fetch response
    */
   public enqueue (apiRequest: APIRequest): Promise<Response> {
     /**
