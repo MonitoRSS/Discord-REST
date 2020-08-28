@@ -92,18 +92,20 @@ class RESTHandler extends EventEmitter {
   }
 
   /**
-   * Block all buckets from running, or override
-   * buckets' own timers if it's longer for a duration
+   * Block all buckets from running, or override buckets'
+   * own timers if it's longer with the specified
+   * duration
    */
   private blockBucketsByDuration (durationMs: number) {
     this.buckets.forEach((bucket) => {
       const blockedUntil = bucket.blockedUntil
       if (!blockedUntil) {
+        // Block the bucket if it's not blocked
         bucket.block(durationMs)
       } else {
         const now = new Date().getTime()
         const globalBlockUntil = new Date(now + durationMs)
-        // Choose the longer duration
+        // Choose the longer duration for blocking
         if (globalBlockUntil > blockedUntil) {
           bucket.block(durationMs)
         }
@@ -135,7 +137,7 @@ class RESTHandler extends EventEmitter {
       // Return the temporary bucket if there are enqueued items to maintain order
       // The temporary bucket will eventually be removed once the queue is empty
       const temporaryBucket = this.temporaryBucketsByUrl.get(url)
-      if (temporaryBucket && temporaryBucket.queue.length > 0) {
+      if (temporaryBucket?.hasPendingRequests()) {
         return temporaryBucket
       }
       return bucket
