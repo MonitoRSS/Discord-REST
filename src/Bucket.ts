@@ -9,9 +9,9 @@ class Bucket extends EventEmitter {
   restExecutor: RESTExecutor
   id: string
   blockedUntil?: Date
-  timer?: NodeJS.Timeout
-  queue: APIRequest[] = []
-  debug: Debugger
+  private timer?: NodeJS.Timeout
+  private readonly queue: APIRequest[] = []
+  private readonly debug: Debugger
 
   constructor (restExecutor: RESTExecutor, id: string) {
     super()
@@ -35,6 +35,13 @@ class Bucket extends EventEmitter {
       // Only available when a global limit is hit
       RETRY_AFTER: 'Retry-After'
     }
+  }
+
+  /**
+   * If there are queued up requests in this bucket
+   */
+  public hasPendingRequests (): boolean {
+    return this.queue.length > 0
   }
 
   /**
@@ -112,7 +119,7 @@ class Bucket extends EventEmitter {
    * Emit the bucket ID from request headers as an event for
    * the RESTExecutor to map a url to its bucket in the future
    */
-  recognizeURLBucket (url: string, headers: Headers): void {
+  private recognizeURLBucket (url: string, headers: Headers): void {
     if (!Bucket.hasBucketLimits(headers)) {
       return
     }
@@ -126,7 +133,7 @@ class Bucket extends EventEmitter {
   /**
    * Block this executor from further requests for a duration
    */
-  block (durationMs: number): void {
+  public block (durationMs: number): void {
     if (this.timer) {
       clearTimeout(this.timer)
     }
@@ -141,7 +148,7 @@ class Bucket extends EventEmitter {
    * Copys the block to another bucket. Used when temporary
    * buckets are removed, but still has a block on them
    */
-  copyBlockTo (otherBucket: Bucket): void {
+  public copyBlockTo (otherBucket: Bucket): void {
     if (!this.blockedUntil) {
       return
     }
@@ -154,7 +161,7 @@ class Bucket extends EventEmitter {
   /**
    * Delay the execution and resolution of an API request
    */
-  async delayExecution (apiRequest: APIRequest): Promise<Response> {
+  private async delayExecution (apiRequest: APIRequest): Promise<Response> {
     const now = new Date().getTime()
     const future = (this.blockedUntil as Date).getTime()
     return new Promise((resolve) => {
@@ -168,7 +175,7 @@ class Bucket extends EventEmitter {
    * Wait for previous API requests to finish
    * @param {import('./APIRequest.JS')} apiRequest
    */
-  async waitForRequest (apiRequest: APIRequest): Promise<void> {
+  private async waitForRequest (apiRequest: APIRequest): Promise<void> {
     if (!apiRequest) {
       return
     }
@@ -180,7 +187,7 @@ class Bucket extends EventEmitter {
   /**
    * Queue up an API request for execution.
    */
-  enqueue (apiRequest: APIRequest): Promise<Response> {
+  public enqueue (apiRequest: APIRequest): Promise<Response> {
     /**
      * This function must not be prefixed with async since
      * the queue push must be synchronous
@@ -211,7 +218,7 @@ class Bucket extends EventEmitter {
   /**
    * Execute a APIRequest by fetching it
    */
-  async execute (apiRequest: APIRequest): Promise<Response> {
+  private async execute (apiRequest: APIRequest): Promise<Response> {
     if (this.blockedUntil) {
       this.debug(`Delaying execution until ${this.blockedUntil} for ${apiRequest.toString()}`)
       return this.delayExecution(apiRequest)
@@ -231,14 +238,14 @@ class Bucket extends EventEmitter {
    * Mark an API request as finished to proceed with the queue
    * for other enqueued requests
    */
-  finishHandling (apiRequest: APIRequest): void {
+  private finishHandling (apiRequest: APIRequest): void {
     this.emit(`finishedRequest-${apiRequest.id}`)
   }
 
   /**
    * Handle 429 status code response (rate limited)
    */
-  async handle429Response (apiRequest: APIRequest, res: Response): Promise<Response> {
+  private async handle429Response (apiRequest: APIRequest, res: Response): Promise<Response> {
     const { headers } = res
     const blockedDuration = Bucket.getBlockedDuration(headers)
     this.emit('429', apiRequest)
@@ -259,7 +266,7 @@ class Bucket extends EventEmitter {
   /**
    * Handle any responses that is not a rate limit block
    */
-  async handleResponse (apiRequest: APIRequest, res: Response): Promise<Response> {
+  private async handleResponse (apiRequest: APIRequest, res: Response): Promise<Response> {
     this.debug(`Non-429 response for ${apiRequest.toString()}`)
     const blockedDuration = Bucket.getBlockedDuration(res.headers)
     if (blockedDuration !== -1) {
