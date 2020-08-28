@@ -1,21 +1,18 @@
 import { EventEmitter } from 'events'
-import RESTExecutor from './RESTHandler'
 import APIRequest from './APIRequest';
 import { Headers, Response } from 'node-fetch';
 import { Debugger } from 'debug';
 import { createBucketDebug } from './util/debug';
 
 class Bucket extends EventEmitter {
-  restExecutor: RESTExecutor
   id: string
   blockedUntil?: Date
   private timer?: NodeJS.Timeout
   private readonly queue: APIRequest[] = []
   private readonly debug: Debugger
 
-  constructor (restExecutor: RESTExecutor, id: string) {
+  constructor (id: string) {
     super()
-    this.restExecutor = restExecutor
     this.id = id
     this.debug = createBucketDebug(id)
   }

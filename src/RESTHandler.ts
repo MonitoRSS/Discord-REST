@@ -40,7 +40,7 @@ class RESTHandler extends EventEmitter {
    * Create a permanent bucket for a route
    */
   private createBucket (route: string, bucketId: string) {
-    const bucket = new Bucket(this, bucketId)
+    const bucket = new Bucket(bucketId)
     this.buckets.set(bucketId, bucket)
     this.bucketsByUrl.set(route, bucket)
     this.registerBucketListener(bucket)
@@ -51,7 +51,7 @@ class RESTHandler extends EventEmitter {
    * Creates a temporary bucket for a route whose bucket is unknown
    */
   private createTemporaryBucket (route: string) {
-    const bucket = new Bucket(this, route)
+    const bucket = new Bucket(route)
     this.temporaryBucketsByUrl.set(route, bucket)
     this.registerBucketListener(bucket)
     return bucket
