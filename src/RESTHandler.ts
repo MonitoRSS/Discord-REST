@@ -7,6 +7,7 @@ declare interface RESTHandler {
   emit(event: 'rateLimit', apiRequest: APIRequest): boolean
   emit(event: 'globalRateLimit'): boolean
   on(event: 'rateLimit', listener: (apiRequest: APIRequest) => void): this;
+  on(event: 'globalRateLimit', listener: () => void): this;
 }
 
 /**
