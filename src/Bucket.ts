@@ -300,7 +300,6 @@ class Bucket extends EventEmitter {
   private async handle429Response (apiRequest: APIRequest, res: Response): Promise<Response> {
     const { headers } = res
     const blockedDurationMs = Bucket.getBlockedDuration(headers)
-    this.emit('rateLimit', apiRequest)
     this.debug(`429 hit for ${apiRequest.toString()}`)
     if (blockedDurationMs === -1) {
       throw new Error('429 response')
@@ -308,6 +307,8 @@ class Bucket extends EventEmitter {
     if (Bucket.isGloballyBlocked(headers)) {
       this.debug(`Global limit was hit after ${apiRequest.toString()}`)
       this.emit('globalRateLimit', blockedDurationMs)
+    } else {
+      this.emit('rateLimit', apiRequest)
     }
     this.debug(`Blocking for ${blockedDurationMs}ms after 429 response for ${apiRequest.toString()}`)
     this.block(blockedDurationMs)
