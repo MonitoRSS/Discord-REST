@@ -1,3 +1,7 @@
-import RESTHandler from "./RESTHandler";
+import RESTHandler from "./RESTHandler"
+import APIRequest from './APIRequest'
 
-export default RESTHandler
+export {
+  RESTHandler,
+  APIRequest
+}
