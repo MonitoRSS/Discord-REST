@@ -2,6 +2,8 @@
 
 Bare bones library meant to properly and gracefully handle the frightening monster that is Discord rate limits.
 
+Currently in testing.
+
 ```ts
 import { RESTHandler } from 'synzen/Discord-Rest'
 
