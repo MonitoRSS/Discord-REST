@@ -220,8 +220,6 @@ class Bucket extends EventEmitter {
 
   /**
    * Wait for previous API requests to finish
-   * 
-   * @param {import('./APIRequest.JS')} apiRequest
    */
   private async waitForRequest (apiRequest: APIRequest): Promise<void> {
     if (!apiRequest) {
@@ -251,6 +249,8 @@ class Bucket extends EventEmitter {
         await this.waitForRequest(previousRequest)
         const result = await this.execute(apiRequest)
         this.queue.splice(this.queue.indexOf(apiRequest), 1)
+        // If the queue is empty, emit an event and allow
+        // it to be deleted if it is pending deletion
         if (this.queue.length === 0) {
           this.debug('Finished entire queue')
           this.emit('finishedAll')
