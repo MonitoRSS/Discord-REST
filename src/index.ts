@@ -1,1 +1,3 @@
-export { default as RESTHandler } from "./RESTHandler";
+import RESTHandler from "./RESTHandler";
+
+export default RESTHandler
