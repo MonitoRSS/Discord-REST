@@ -3,6 +3,12 @@ import { RequestInit, Response } from "node-fetch";
 import APIRequest from "./APIRequest";
 import { EventEmitter } from "events";
 
+declare interface RESTHandler {
+  emit(event: 'rateLimit', apiRequest: APIRequest): boolean
+  emit(event: 'globalRateLimit'): boolean
+  on(event: 'rateLimit', listener: (apiRequest: APIRequest) => void): this;
+}
+
 /**
  * The entry point for all requests
  */
@@ -42,8 +48,11 @@ class RESTHandler extends EventEmitter {
    */
   private registerBucketListener (bucket: Bucket) {
     bucket.on('recognizeURLBucket', this.recognizeURLBucket.bind(this))
-    bucket.on('globalLimit', this.blockBucketsByDuration.bind(this))
-    bucket.on('429', (apiRequest: APIRequest) => this.emit('429', apiRequest))
+    bucket.on('globalRateLimit', (number) => {
+      this.emit('globalRateLimit')
+      this.blockBucketsByDuration(number)
+    })
+    bucket.on('rateLimit', (apiRequest: APIRequest) => this.emit('rateLimit', apiRequest))
   }
 
   /**
@@ -80,9 +89,7 @@ class RESTHandler extends EventEmitter {
         // Copy the bucket block over to the new bucket if it exists
         tempBucket.copyBlockTo(newBucket)
         this.temporaryBucketsByUrl.delete(route)
-        
       })
-      
     }
   }
 

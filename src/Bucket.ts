@@ -4,6 +4,17 @@ import { Headers, Response } from 'node-fetch';
 import { Debugger } from 'debug';
 import { createBucketDebug } from './util/debug';
 
+declare interface Bucket {
+  emit(event: 'recognizeURLBucket', url: string, bucketId: string): boolean
+  emit(event: 'finishedAll'): boolean
+  emit(event: 'rateLimit', apiRequest: APIRequest): boolean
+  emit(event: 'globalRateLimit', durationMs: number): boolean
+  on(event: 'recognizeURLBucket', listener: (url: string, bucketId: string) => void): this
+  on(event: 'finishedAll', listener: () => void): this
+  on(event: 'rateLimit', listener: (apiRequest: APIRequest) => void): this
+  on(event: 'globalRateLimit', listener: (durationMs: number) => void): this
+}
+
 /**
  * Handles the queueing of requests of a particular bucket
  */
@@ -161,7 +172,9 @@ class Bucket extends EventEmitter {
       RATELIMIT_BUCKET
     } = Bucket.constants
     const bucketID = headers.get(RATELIMIT_BUCKET)
-    this.emit('recognizeURLBucket', url, bucketID)
+    if (bucketID) {
+      this.emit('recognizeURLBucket', url, bucketID)
+    }
   }
 
   /**
@@ -276,6 +289,8 @@ class Bucket extends EventEmitter {
    * for other enqueued requests
    */
   private finishHandling (apiRequest: APIRequest): void {
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-ignore
     this.emit(`finishedRequest-${apiRequest.id}`)
   }
 
@@ -285,14 +300,14 @@ class Bucket extends EventEmitter {
   private async handle429Response (apiRequest: APIRequest, res: Response): Promise<Response> {
     const { headers } = res
     const blockedDurationMs = Bucket.getBlockedDuration(headers)
-    this.emit('429', apiRequest)
+    this.emit('rateLimit', apiRequest)
     this.debug(`429 hit for ${apiRequest.toString()}`)
     if (blockedDurationMs === -1) {
       throw new Error('429 response')
     }
     if (Bucket.isGloballyBlocked(headers)) {
       this.debug(`Global limit was hit after ${apiRequest.toString()}`)
-      this.emit('globalLimit', blockedDurationMs)
+      this.emit('globalRateLimit', blockedDurationMs)
     }
     this.debug(`Blocking for ${blockedDurationMs}ms after 429 response for ${apiRequest.toString()}`)
     this.block(blockedDurationMs)
