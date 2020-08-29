@@ -1,9 +1,19 @@
 {
-  "name": "discord-rest",
-  "version": "1.0.1",
+  "name": "@synzen/discord-rest",
+  "version": "0.0.1",
   "description": "",
   "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "build/**/*"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/synzen/discord-rest"
+  },
   "scripts": {
+    "prepare": "npm run build",
+    "build": "tsc",
     "test": "jest",
     "lint": "eslint ."
   },
