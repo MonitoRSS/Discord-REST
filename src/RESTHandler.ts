@@ -4,9 +4,9 @@ import APIRequest from "./APIRequest";
 import { EventEmitter } from "events";
 
 declare interface RESTHandler {
-  emit(event: 'rateLimit', apiRequest: APIRequest): boolean
+  emit(event: 'rateLimit', apiRequest: APIRequest, blockedDurationMs: number): boolean
   emit(event: 'globalRateLimit', apiRequest: APIRequest, blockedDurationMs: number): boolean
-  on(event: 'rateLimit', listener: (apiRequest: APIRequest) => void): this;
+  on(event: 'rateLimit', listener: (apiRequest: APIRequest, blockedDurationMs: number) => void): this;
   on(event: 'globalRateLimit', listener: (apiRequest: APIRequest, blockedDurationMs: number) => void): this;
 }
 
@@ -50,11 +50,13 @@ class RESTHandler extends EventEmitter {
    */
   private registerBucketListener (bucket: Bucket) {
     bucket.on('recognizeURLBucket', this.recognizeURLBucket.bind(this))
-    bucket.on('globalRateLimit', (apiRequest, number) => {
-      this.emit('globalRateLimit', apiRequest, number)
-      this.blockBucketsByDuration(number)
+    bucket.on('globalRateLimit', (apiRequest, durationMs) => {
+      this.emit('globalRateLimit', apiRequest, durationMs)
+      this.blockBucketsByDuration(durationMs)
     })
-    bucket.on('rateLimit', (apiRequest: APIRequest) => this.emit('rateLimit', apiRequest))
+    bucket.on('rateLimit', (apiRequest: APIRequest, durationMs: number) => {
+      this.emit('rateLimit', apiRequest, durationMs)
+    })
   }
 
   /**

@@ -7,12 +7,12 @@ import { createBucketDebug } from './util/debug';
 declare interface Bucket {
   emit(event: 'recognizeURLBucket', url: string, bucketId: string): boolean
   emit(event: 'finishedAll'): boolean
-  emit(event: 'rateLimit', apiRequest: APIRequest): boolean
-  emit(event: 'globalRateLimit', apiRequest: APIRequest, durationMs: number): boolean
+  emit(event: 'rateLimit', apiRequest: APIRequest, blockedDurationMs: number): boolean
+  emit(event: 'globalRateLimit', apiRequest: APIRequest, blockedDurationMs: number): boolean
   on(event: 'recognizeURLBucket', listener: (url: string, bucketId: string) => void): this
   on(event: 'finishedAll', listener: () => void): this
-  on(event: 'rateLimit', listener: (apiRequest: APIRequest) => void): this
-  on(event: 'globalRateLimit', listener: (apiRequest: APIRequest, durationMs: number) => void): this
+  on(event: 'rateLimit', listener: (apiRequest: APIRequest, blockedDurationMs: number) => void): this
+  on(event: 'globalRateLimit', listener: (apiRequest: APIRequest, blockedDurationMs: number) => void): this
 }
 
 /**
@@ -328,7 +328,7 @@ class Bucket extends EventEmitter {
       this.debug(`Global limit was hit after ${apiRequest.toString()}`)
       this.emit('globalRateLimit', apiRequest, blockedDurationMs)
     } else {
-      this.emit('rateLimit', apiRequest)
+      this.emit('rateLimit', apiRequest, blockedDurationMs)
     }
     this.debug(`Blocking for ${blockedDurationMs}ms after 429 response for ${apiRequest.toString()}`)
     this.block(blockedDurationMs)
