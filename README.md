@@ -8,8 +8,8 @@ Requests are automatically timed out after 10s.
 
 ### Table of Contents
 * [Usage](#usage)
+* [Handle Invalid Requests](#handle-invalid-requests)
 * [Debugging](#debugging)
-<!-- - [Excessive Rate Limit Handling](#failsafe) -->
 
 ## Usage
 ```ts
@@ -59,13 +59,24 @@ You will notice that they are executed in order with the output:
 ```
 since they are all within the same rate limit bucket.
 
-<!-- ## Excessive Rate Limit Handling
+## Handle Invalid Requests
 
-If you encounter to many rate limits, Discord will block your IP as noted in https://discord.com/developers/docs/topics/rate-limits#invalid-request-limit. You can listen for rate limit hits like so:
+If you encounter too many invalid requests within a certain time frame, Discord will temporarily block your IP as noted in https://discord.com/developers/docs/topics/rate-limits#invalid-request-limit. An invalid request (as it is currently defined at the time of this writing), is a response of 429, 401, or 403. The hard limit for Discord is 10,000 invalid requests within 10 minutes. You can listen for invalid requests like so:
 
 ```ts
 const handler = new RESTHandler()
 
+// Listen for API responses with status codes 429, 401 and 403
+restHandler.on('invalidRequest', (apiRequest, countSoFar) => {
+  console.error(`Invalid request for ${apiRequest.toString()} (${countSoFar} total within 10 minutes)`)
+})
+```
+
+This library will delay and queue up all further requests for 10 minutes after it encounters 5,000 invalid requests within 10 minutes.
+
+If you'd like to specifically listen for rate limit hits, you can listen to the following events.
+
+```ts
 // Listen for bucket rate limit encounters
 restHandler.on('rateLimit', (apiRequest, blockedDurationMs) => {
   console.error(`Bucket rate limit hit for ${apiRequest.toString()} (blocked for ${blockedDurationMs}ms)`)
@@ -76,8 +87,6 @@ restHandler.on('globalRateLimit', (apiRequest, blockedDurationMs) => {
   console.error(`Global rate limit hit for ${apiRequest.toString()} (blocked for ${blockedDurationMs}ms)`)
 })
 ```
-
-and take preemptive action *before* the hard limit is reached. At the time of this writing, it is a hard limit of 10,000 rate limit hits within 10 minutes. -->
 
 ## Debugging
 
@@ -100,16 +109,13 @@ discordrest:bucket:0123--4567- Enqueuing request https://discord.com/api/channel
   discordrest:bucket:0123--4567- Non-429 response for https://discord.com/api/channels/4567/messages (#5) +79ms
   discordrest:bucket:0123--4567- Blocking for 1000ms after non-429 response for https://discord.com/api/channels/4567/messages (#5) +2ms
   discordrest:bucket:0123--4567- Finished https://discord.com/api/channels/4567/messages (#5) +1ms
-channel 1  0
   discordrest:bucket:0123--4567- Delaying execution until Sun Aug 30 2020 12:18:35 GMT-0400 (Eastern Daylight Time) for https://discord.com/api/channels/4567/messages (#6) +1ms
   discordrest:bucket:0123--4567- Executing https://discord.com/api/channels/4567/messages (#6) +1s
   discordrest:bucket:0123--4567- Non-429 response for https://discord.com/api/channels/4567/messages (#6) +106ms
   discordrest:bucket:0123--4567- Finished https://discord.com/api/channels/4567/messages (#6) +3ms
-channel 1  1
   discordrest:bucket:0123--4567- Executing https://discord.com/api/channels/4567/messages (#7) +1ms
   discordrest:bucket:0123--4567- Non-429 response for https://discord.com/api/channels/4567/messages (#7) +88ms
   discordrest:bucket:0123--4567- Finished https://discord.com/api/channels/4567/messages (#7) +0ms
-channel 1  2
   discordrest:bucket:0123--4567- Executing https://discord.com/api/channels/4567/messages (#8) +1ms
   discordrest:bucket:0123--4567- Non-429 response for https://discord.com/api/channels/4567/messages (#8) +88ms
   discordrest:bucket:0123--4567- Finished entire queue +1ms
