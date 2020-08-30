@@ -102,22 +102,22 @@ set DEBUG=discordrest:*
 You will see output like below.
 ```shell
 discordrest:bucket:0123--4567- Enqueuing request https://discord.com/api/channels/4567/messages (#5) +0ms
-  discordrest:bucket:0123--4567- Enqueuing request https://discord.com/api/channels/4567/messages (#6) +0ms
-  discordrest:bucket:0123--4567- Enqueuing request https://discord.com/api/channels/4567/messages (#7) +1ms
-  discordrest:bucket:0123--4567- Enqueuing request https://discord.com/api/channels/4567/messages (#8) +0ms
-  discordrest:bucket:0123--4567- Executing https://discord.com/api/channels/4567/messages (#5) +1ms
-  discordrest:bucket:0123--4567- Non-429 response for https://discord.com/api/channels/4567/messages (#5) +79ms
-  discordrest:bucket:0123--4567- Blocking for 1000ms after non-429 response for https://discord.com/api/channels/4567/messages (#5) +2ms
-  discordrest:bucket:0123--4567- Finished https://discord.com/api/channels/4567/messages (#5) +1ms
-  discordrest:bucket:0123--4567- Delaying execution until Sun Aug 30 2020 12:18:35 GMT-0400 (Eastern Daylight Time) for https://discord.com/api/channels/4567/messages (#6) +1ms
-  discordrest:bucket:0123--4567- Executing https://discord.com/api/channels/4567/messages (#6) +1s
-  discordrest:bucket:0123--4567- Non-429 response for https://discord.com/api/channels/4567/messages (#6) +106ms
-  discordrest:bucket:0123--4567- Finished https://discord.com/api/channels/4567/messages (#6) +3ms
-  discordrest:bucket:0123--4567- Executing https://discord.com/api/channels/4567/messages (#7) +1ms
-  discordrest:bucket:0123--4567- Non-429 response for https://discord.com/api/channels/4567/messages (#7) +88ms
-  discordrest:bucket:0123--4567- Finished https://discord.com/api/channels/4567/messages (#7) +0ms
-  discordrest:bucket:0123--4567- Executing https://discord.com/api/channels/4567/messages (#8) +1ms
-  discordrest:bucket:0123--4567- Non-429 response for https://discord.com/api/channels/4567/messages (#8) +88ms
-  discordrest:bucket:0123--4567- Finished entire queue +1ms
-  discordrest:bucket:0123--4567- Finished https://discord.com/api/channels/4567/messages (#8) +1ms
+discordrest:bucket:0123--4567- Enqueuing request https://discord.com/api/channels/4567/messages (#6) +0ms
+discordrest:bucket:0123--4567- Enqueuing request https://discord.com/api/channels/4567/messages (#7) +1ms
+discordrest:bucket:0123--4567- Enqueuing request https://discord.com/api/channels/4567/messages (#8) +0ms
+discordrest:bucket:0123--4567- Executing https://discord.com/api/channels/4567/messages (#5) +1ms
+discordrest:bucket:0123--4567- Non-429 response for https://discord.com/api/channels/4567/messages (#5) +79ms
+discordrest:bucket:0123--4567- Blocking for 1000ms after non-429 response for https://discord.com/api/channels/4567/messages (#5) +2ms
+discordrest:bucket:0123--4567- Finished https://discord.com/api/channels/4567/messages (#5) +1ms
+discordrest:bucket:0123--4567- Delaying execution until Sun Aug 30 2020 12:18:35 GMT-0400 (Eastern Daylight Time) for https://discord.com/api/channels/4567/messages (#6) +1ms
+discordrest:bucket:0123--4567- Executing https://discord.com/api/channels/4567/messages (#6) +1s
+discordrest:bucket:0123--4567- Non-429 response for https://discord.com/api/channels/4567/messages (#6) +106ms
+discordrest:bucket:0123--4567- Finished https://discord.com/api/channels/4567/messages (#6) +3ms
+discordrest:bucket:0123--4567- Executing https://discord.com/api/channels/4567/messages (#7) +1ms
+discordrest:bucket:0123--4567- Non-429 response for https://discord.com/api/channels/4567/messages (#7) +88ms
+discordrest:bucket:0123--4567- Finished https://discord.com/api/channels/4567/messages (#7) +0ms
+discordrest:bucket:0123--4567- Executing https://discord.com/api/channels/4567/messages (#8) +1ms
+discordrest:bucket:0123--4567- Non-429 response for https://discord.com/api/channels/4567/messages (#8) +88ms
+discordrest:bucket:0123--4567- Finished entire queue +1ms
+discordrest:bucket:0123--4567- Finished https://discord.com/api/channels/4567/messages (#8) +1ms
 ```
