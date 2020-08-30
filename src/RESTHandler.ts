@@ -22,8 +22,9 @@ class RESTHandler extends EventEmitter {
    */
   temporaryBucketsByUrl: Map<string, Bucket>
   /**
-   * Buckets mapped by their IDs, where the IDs are the
-   * ones returned by Discord.
+   * Buckets mapped by their IDs, where the IDs are
+   * resolved based on route major parameters and the
+   * X-RateLimit-Bucket header returned by Discord.
    */
   buckets: Map<string, Bucket>
   /**

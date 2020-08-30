@@ -70,6 +70,27 @@ class Bucket extends EventEmitter {
       RETRY_AFTER: 'Retry-After'
     }
   }
+  
+  /**
+   * Create a bucket's ID using major route parameters and the bucket
+   * header defined in X-RateLimit-Bucket. If it cannot be resolved,
+   * use the route as the bucket ID.
+   * 
+   * @param route API Route
+   * @param rateLimitBucket Bucket defined in X-RateLimit-Bucket header
+   */
+  static resolveBucketId (route: string, rateLimitBucket?: string): string {
+    const guildId = route.match(/\/guilds\/(\d+)/)?.[1] || ''
+    const channelId = route.match(/\/channels\/(\d+)/)?.[1] || ''
+    const webhookId = route.match(/\/webhooks\/(\d+)/)?.[1] || ''
+    const headerBucket = rateLimitBucket || ''
+    const firstTry = [headerBucket, guildId, channelId, webhookId]
+    if (firstTry.filter(item => item).length > 0) {
+      return firstTry.join('-')
+    } else {
+      return route
+    }
+  }
 
   /**
    * If there are queued up requests in this bucket
@@ -171,10 +192,9 @@ class Bucket extends EventEmitter {
     const {
       RATELIMIT_BUCKET
     } = Bucket.constants
-    const bucketID = headers.get(RATELIMIT_BUCKET)
-    if (bucketID) {
-      this.emit('recognizeURLBucket', url, bucketID)
-    }
+    const rateLimitBucket = headers.get(RATELIMIT_BUCKET) || ''
+    const bucketID = Bucket.resolveBucketId(url, rateLimitBucket)
+    this.emit('recognizeURLBucket', url, bucketID)
   }
 
   /**
