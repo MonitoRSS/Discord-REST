@@ -11,6 +11,10 @@ Requests are automatically timed out after 10s.
 * [Handle Invalid Requests](#handle-invalid-requests)
 * [Debugging](#debugging)
 
+```
+npm i @synzen/discord-rest
+```
+
 ## Usage
 ```ts
 import { RESTHandler } from 'synzen/Discord-Rest'
