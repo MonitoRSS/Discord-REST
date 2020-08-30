@@ -21,7 +21,7 @@ npm i @synzen/discord-rest
 ## Usage
 
 ```ts
-import { RESTHandler } from 'synzen/Discord-Rest'
+import { RESTHandler } from '@synzen/discord-rest'
 
 // node-fetch arguments
 handler.fetch('https://discord.com/api/channels/channelID/messages', {
@@ -30,7 +30,7 @@ handler.fetch('https://discord.com/api/channels/channelID/messages', {
     content: 'abc'
   }),
   headers: {
-    Authorization: `Bot ${process.env.BOT_TOKEN}`,
+  Authorization: `Bot ${process.env.BOT_TOKEN}`,
     // Specifically for JSON responses
     'Content-Type': 'application/json',
     Accept: 'application/json'
