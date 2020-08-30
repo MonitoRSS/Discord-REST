@@ -6,7 +6,7 @@ import { EventEmitter } from "events";
 declare interface RESTHandler {
   emit(event: 'rateLimit', apiRequest: APIRequest, blockedDurationMs: number): boolean
   emit(event: 'globalRateLimit', apiRequest: APIRequest, blockedDurationMs: number): boolean
-  emit(event: 'invalidRequest', apiRequest: APIRequest): boolean
+  emit(event: 'invalidRequest', apiRequest: APIRequest, countSoFar: number): boolean
   /**
    * When a bucket rate limit is encountered
    */
@@ -19,7 +19,7 @@ declare interface RESTHandler {
    * When an invalid request that count towards a hard limit
    * is encountered.
    */
-  on(event: 'invalidRequest', listener: (apiRequest: APIRequest) => void): this
+  on(event: 'invalidRequest', listener: (apiRequest: APIRequest, countSoFar: number) => void): this
 }
 
 /**
@@ -106,8 +106,8 @@ class RESTHandler extends EventEmitter {
       this.emit('rateLimit', apiRequest, durationMs)
     })
     bucket.on('invalidRequest', (apiRequest: APIRequest) => {
-      this.emit('invalidRequest', apiRequest)
       this.increaseInvalidRequestCount()
+      this.emit('invalidRequest', apiRequest, this.invalidRequestsCount)
     })
   }
 
