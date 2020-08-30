@@ -81,15 +81,18 @@ const options = {
   /**
    * Maximum number of invalid requests allowed within 10
    * minutes before delaying all further requests by
-   * 10 minutes.
+   * 10 minutes. For more details, see the Handle Invalid
+   * Requests section.
    * 
    * Default is half of the hard limit, where the hard limit
-   * is 10,000
+   * is 10,000. Has no effect if delayOnInvalidThreshold is
+   * false.
    */
   invalidRequestsThreshold: 5000,
   /**
    * Whether to delay all requests by 10 minutes when the
-   * invalid requests threshold is reached
+   * invalid requests threshold is reached. For more details,
+   * see the Handle Invalid Requests section.
    * 
    * Default is true
    */
