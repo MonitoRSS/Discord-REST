@@ -7,15 +7,19 @@ All requests are executed in order. The goal of this library is to minimize or c
 Requests are automatically timed out after 10s.
 
 ### Table of Contents
+* [Install](#install)
 * [Usage](#usage)
 * [Handle Invalid Requests](#handle-invalid-requests)
 * [Debugging](#debugging)
+
+## Install
 
 ```
 npm i @synzen/discord-rest
 ```
 
 ## Usage
+
 ```ts
 import { RESTHandler } from 'synzen/Discord-Rest'
 
