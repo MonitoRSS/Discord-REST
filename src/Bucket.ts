@@ -9,10 +9,12 @@ declare interface Bucket {
   emit(event: 'finishedAll'): boolean
   emit(event: 'rateLimit', apiRequest: APIRequest, blockedDurationMs: number): boolean
   emit(event: 'globalRateLimit', apiRequest: APIRequest, blockedDurationMs: number): boolean
+  emit(event: 'invalidRequest', apiRequest: APIRequest): boolean;
   on(event: 'recognizeURLBucket', listener: (url: string, bucketId: string) => void): this
   on(event: 'finishedAll', listener: () => void): this
   on(event: 'rateLimit', listener: (apiRequest: APIRequest, blockedDurationMs: number) => void): this
   on(event: 'globalRateLimit', listener: (apiRequest: APIRequest, blockedDurationMs: number) => void): this
+  on(event: 'invalidRequest', listener: (apiRequest: APIRequest) => void): this
 }
 
 /**
@@ -330,6 +332,12 @@ class Bucket extends EventEmitter {
     } else {
       this.emit('rateLimit', apiRequest, blockedDurationMs)
     }
+    /**
+     * 429 is considered an invalid request, and is counted towards
+     * a hard limit that will result in an temporary IP ban if
+     * exceeded
+     */
+    this.emit('invalidRequest', apiRequest)
     this.debug(`Blocking for ${blockedDurationMs}ms after 429 response for ${apiRequest.toString()}`)
     this.block(blockedDurationMs)
     const futureResult = await this.delayExecution(apiRequest)
@@ -345,6 +353,14 @@ class Bucket extends EventEmitter {
     if (blockedDurationMs !== -1) {
       this.debug(`Blocking for ${blockedDurationMs}ms after non-429 response for ${apiRequest.toString()}`)
       this.block(blockedDurationMs)
+    }
+    /**
+     * 401 and 403 are considered invalid requests, and are counted
+     * towards a hard limit that will result in a temporary IP ban
+     * if exceeded
+     */
+    if (res.status === 401 || res.status === 403) {
+      this.emit('invalidRequest', apiRequest)
     }
     return res
   }

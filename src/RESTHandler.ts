@@ -6,8 +6,20 @@ import { EventEmitter } from "events";
 declare interface RESTHandler {
   emit(event: 'rateLimit', apiRequest: APIRequest, blockedDurationMs: number): boolean
   emit(event: 'globalRateLimit', apiRequest: APIRequest, blockedDurationMs: number): boolean
+  emit(event: 'invalidRequest', apiRequest: APIRequest): boolean
+  /**
+   * When a bucket rate limit is encountered
+   */
   on(event: 'rateLimit', listener: (apiRequest: APIRequest, blockedDurationMs: number) => void): this;
+  /**
+   * When a global rate limit is encountered
+   */
   on(event: 'globalRateLimit', listener: (apiRequest: APIRequest, blockedDurationMs: number) => void): this;
+  /**
+   * When an invalid request that count towards a hard limit
+   * is encountered.
+   */
+  on(event: 'invalidRequest', listener: (apiRequest: APIRequest) => void): this
 }
 
 /**
@@ -20,13 +32,13 @@ class RESTHandler extends EventEmitter {
    * used for every route until their actual bucket is
    * known after a fetch.
    */
-  temporaryBucketsByUrl: Map<string, Bucket>
+  private temporaryBucketsByUrl: Map<string, Bucket>
   /**
    * Buckets mapped by their IDs, where the IDs are
    * resolved based on route major parameters and the
    * X-RateLimit-Bucket header returned by Discord.
    */
-  buckets: Map<string, Bucket>
+  private buckets: Map<string, Bucket>
   /**
    * Buckets mapped by the route URLs. These buckets are
    * considered the "true" buckets for their specified
@@ -36,13 +48,49 @@ class RESTHandler extends EventEmitter {
    * the "buckets" instance variable whenever subsequent
    * requests are made.
    */
-  bucketsByUrl: Map<string, Bucket>
+  private bucketsByUrl: Map<string, Bucket>
+  /**
+   * Number of invalid requests made within 10 minutes. If
+   * the number of invalid requests reaches a certain hard
+   * limit (specified by Discord - currently 10,000),
+   * Discord will block the application's IP from accessing
+   * its API.
+   */
+  private invalidRequestsCount = 0
+  /**
+   * Maximum number of invalid requests allowed within 10
+   * minutes before delaying all further requests by
+   * 10 minutes.
+   * 
+   * Set to half of the hard limit (10,000)
+   */
+  private maxInvalidRequests = 5000
 
   constructor () {
     super()
     this.temporaryBucketsByUrl = new Map()
     this.buckets = new Map()
     this.bucketsByUrl = new Map()
+    /**
+     * Reset the invalid requests count every 10 minutes
+     * since that is the duration specified by Discord.
+     */
+    setInterval(() => {
+      this.invalidRequestsCount = 0
+    }, 1000 * 60 * 10)
+  }
+
+  /**
+   * Increase the number of invalid requests. Invalid
+   * requests have responses with status codes 401, 403,
+   * 429.
+   */
+  private increaseInvalidRequestCount () {
+    ++this.invalidRequestsCount
+    if (this.invalidRequestsCount === this.maxInvalidRequests) {
+      // Block all buckets from executing requests for 10 min
+      this.blockBucketsByDuration(1000 * 60 * 10)
+    }
   }
 
   /**
@@ -56,6 +104,10 @@ class RESTHandler extends EventEmitter {
     })
     bucket.on('rateLimit', (apiRequest: APIRequest, durationMs: number) => {
       this.emit('rateLimit', apiRequest, durationMs)
+    })
+    bucket.on('invalidRequest', (apiRequest: APIRequest) => {
+      this.emit('invalidRequest', apiRequest)
+      this.increaseInvalidRequestCount()
     })
   }
 
