@@ -4,11 +4,11 @@
 
 All requests are executed in order. The goal of this library is to minimize or completely avoid bucket ratelimits. The only rate limits you should be hitting are global ones since Discord does not provide information on global limits for preemptive actions until you actually hit one.
 
-Requests are automatically timed out after 10s.
-
 ### Table of Contents
 * [Install](#install)
 * [Usage](#usage)
+  * [Examples](#examples)
+  * [Custom Options](#custom-options)
 * [Handle Invalid Requests](#handle-invalid-requests)
 * [Debugging](#debugging)
 
@@ -20,8 +20,12 @@ npm i @synzen/discord-rest
 
 ## Usage
 
+### Examples
+
 ```ts
 import { RESTHandler } from '@synzen/discord-rest'
+
+const handler = new RESTHandler()
 
 // node-fetch arguments
 handler.fetch('https://discord.com/api/channels/channelID/messages', {
@@ -58,14 +62,56 @@ for (let i = 0; i < 3; ++i) {
   .catch(console.error)
 }
 ```
-You will notice that they are executed in order with the output:
 
 ```shell
 1
 2
 3
 ```
-since they are all within the same rate limit bucket.
+You will notice that they are executed in order since they are all within the same rate limit bucket.
+
+### Custom Options
+
+Options can be passed into the `RESTHandler`.
+
+```ts
+import { RESTHandler } from '@synzen/discord-rest'
+
+const options = {
+  /**
+   * Maximum number of invalid requests allowed within 10
+   * minutes before delaying all further requests by
+   * 10 minutes.
+   * 
+   * Default is half of the hard limit, where the hard limit
+   * is 10,000
+   */
+  invalidRequestsThreshold: 5000,
+  /**
+   * Whether to delay all requests by 10 minutes when the
+   * invalid requests threshold is reached
+   * 
+   * Default is true
+   */
+  delayOnInvalidThreshold: true,
+  /**
+   * Milliseconds to wait for an API request before automatically
+   * timing it out
+   * 
+   * Default is 10000 (10 seconds)
+   */
+  requestTimeout: 10000,
+  /**
+   * Number of request retries on API request timeouts
+   * 
+   * Default is 3
+   */
+  requestTimeoutRetries: 3
+}
+
+const restHandler = new RESTHandler(options)
+
+```
 
 ## Handle Invalid Requests
 
