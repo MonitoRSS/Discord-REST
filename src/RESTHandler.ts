@@ -3,6 +3,32 @@ import { RequestInit, Response } from "node-fetch";
 import APIRequest from "./APIRequest";
 import { EventEmitter } from "events";
 
+type RESTHandlerOptions = {
+  /**
+   * Maximum number of invalid requests allowed within 10
+   * minutes before delaying all further requests by
+   * 10 minutes.
+   * 
+   * Default is half of the hard limit, where the hard limit
+   * is 10,000
+   */
+  invalidRequestsThreshold?: number,
+  /**
+   * Whether to delay all requests by 10 minutes when the
+   * invalid requests threshold is reached
+   */
+  delayOnInvalidThreshold?: boolean,
+  /**
+   * Milliseconds to wait for an API request before automatically
+   * timing it out
+   */
+  requestTimeout?: number,
+  /**
+   * Number of request retries on API request timeouts
+   */
+  requestTimeoutRetries?: number
+}
+
 declare interface RESTHandler {
   emit(event: 'rateLimit', apiRequest: APIRequest, blockedDurationMs: number): boolean
   emit(event: 'globalRateLimit', apiRequest: APIRequest, blockedDurationMs: number): boolean
@@ -32,13 +58,13 @@ class RESTHandler extends EventEmitter {
    * used for every route until their actual bucket is
    * known after a fetch.
    */
-  private temporaryBucketsByUrl: Map<string, Bucket>
+  private readonly temporaryBucketsByUrl: Map<string, Bucket> = new Map()
   /**
    * Buckets mapped by their IDs, where the IDs are
    * resolved based on route major parameters and the
    * X-RateLimit-Bucket header returned by Discord.
    */
-  private buckets: Map<string, Bucket>
+  private readonly buckets: Map<string, Bucket> = new Map()
   /**
    * Buckets mapped by the route URLs. These buckets are
    * considered the "true" buckets for their specified
@@ -48,7 +74,7 @@ class RESTHandler extends EventEmitter {
    * the "buckets" instance variable whenever subsequent
    * requests are made.
    */
-  private bucketsByUrl: Map<string, Bucket>
+  private readonly bucketsByUrl: Map<string, Bucket> = new Map()
   /**
    * Number of invalid requests made within 10 minutes. If
    * the number of invalid requests reaches a certain hard
@@ -62,22 +88,25 @@ class RESTHandler extends EventEmitter {
    * minutes before delaying all further requests by
    * 10 minutes.
    * 
-   * Set to half of the hard limit (10,000)
+   * Default is half the hard limit, where the hard limit
+   * is 10,000
    */
-  private maxInvalidRequests = 5000
+  private readonly invalidRequestsThreshold: number
+  private readonly userOptions: RESTHandlerOptions
 
-  constructor () {
+  constructor (options?: RESTHandlerOptions) {
     super()
-    this.temporaryBucketsByUrl = new Map()
-    this.buckets = new Map()
-    this.bucketsByUrl = new Map()
-    /**
-     * Reset the invalid requests count every 10 minutes
-     * since that is the duration specified by Discord.
-     */
-    setInterval(() => {
-      this.invalidRequestsCount = 0
-    }, 1000 * 60 * 10)
+    this.userOptions = options || {}
+    this.invalidRequestsThreshold = options?.invalidRequestsThreshold || 5000
+    if (options?.delayOnInvalidThreshold !== false) {
+      /**
+       * Reset the invalid requests count every 10 minutes
+       * since that is the duration specified by Discord.
+       */
+      setInterval(() => {
+        this.invalidRequestsCount = 0
+      }, 1000 * 60 * 10)
+    }
   }
 
   /**
@@ -87,7 +116,7 @@ class RESTHandler extends EventEmitter {
    */
   private increaseInvalidRequestCount () {
     ++this.invalidRequestsCount
-    if (this.invalidRequestsCount === this.maxInvalidRequests) {
+    if (this.invalidRequestsCount === this.invalidRequestsThreshold) {
       // Block all buckets from executing requests for 10 min
       this.blockBucketsByDuration(1000 * 60 * 10)
     }
@@ -232,7 +261,8 @@ class RESTHandler extends EventEmitter {
    * @returns node-fetch response
    */
   public async fetch (route: string, options: RequestInit): Promise<Response> {
-    const apiRequest = new APIRequest(route, options)
+    const { requestTimeout, requestTimeoutRetries } = this.userOptions
+    const apiRequest = new APIRequest(route, options, requestTimeout, requestTimeoutRetries)
     const url = apiRequest.route
     const bucket = this.getBucketForUrl(url)
     return bucket.enqueue(apiRequest)

@@ -23,18 +23,21 @@ class APIRequest {
    */
   attempted = 0
   /**
-   * Maximum number of failed attempts before rejecting
-   */
-  static readonly maxAttempts = 3
-  /**
    * The time until this request will timeout
    */
-  static readonly timeout = 10000
+  readonly timeout: number
+  /**
+   * Maximum number of failed attempts before rejecting
+   */
+  readonly maxAttempts: number
 
-  constructor (route: string, options?: RequestInit) {
+
+  constructor (route: string, options?: RequestInit, timeout = 10000, maxAttempts = 3) {
     this.route = route
     this.options = options
     this.id = ++APIRequest.lastId
+    this.timeout = timeout
+    this.maxAttempts = maxAttempts
   }
 
   /**
@@ -42,7 +45,7 @@ class APIRequest {
    */
   async execute (): Promise<Response> {
     const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), APIRequest.timeout)
+    const timeout = setTimeout(() => controller.abort(), this.timeout)
     try {
       const res = await fetch(this.route, {
         ...this.options,
@@ -50,7 +53,7 @@ class APIRequest {
       })
       return res
     } catch (err) {
-      if (err.type === 'aborted' && this.attempted++ < APIRequest.maxAttempts) {
+      if (err.type === 'aborted' && this.attempted++ < this.maxAttempts) {
         // If the request timed out, retry it
         return this.execute()
       } else {
