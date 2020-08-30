@@ -8,11 +8,11 @@ declare interface Bucket {
   emit(event: 'recognizeURLBucket', url: string, bucketId: string): boolean
   emit(event: 'finishedAll'): boolean
   emit(event: 'rateLimit', apiRequest: APIRequest): boolean
-  emit(event: 'globalRateLimit', durationMs: number): boolean
+  emit(event: 'globalRateLimit', apiRequest: APIRequest, durationMs: number): boolean
   on(event: 'recognizeURLBucket', listener: (url: string, bucketId: string) => void): this
   on(event: 'finishedAll', listener: () => void): this
   on(event: 'rateLimit', listener: (apiRequest: APIRequest) => void): this
-  on(event: 'globalRateLimit', listener: (durationMs: number) => void): this
+  on(event: 'globalRateLimit', listener: (apiRequest: APIRequest, durationMs: number) => void): this
 }
 
 /**
@@ -326,7 +326,7 @@ class Bucket extends EventEmitter {
     }
     if (Bucket.isGloballyBlocked(headers)) {
       this.debug(`Global limit was hit after ${apiRequest.toString()}`)
-      this.emit('globalRateLimit', blockedDurationMs)
+      this.emit('globalRateLimit', apiRequest, blockedDurationMs)
     } else {
       this.emit('rateLimit', apiRequest)
     }
