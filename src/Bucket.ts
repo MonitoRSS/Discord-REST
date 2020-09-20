@@ -112,19 +112,21 @@ class Bucket extends EventEmitter {
   }
 
   /**
-   * Determine how long the bucket block is in ms from request headers
+   * Determine how long the bucket block is in ms from request headers.
+   * Discord may also still return 429 if remaining is >0. We ignore
+   * remaining in the event of a 429 response.
    * 
    * Returns -1 if no block duration is found in headers
    * 
    * @returns {number} Milliseconds
    */
-  static getBucketBlockDurationMs (headers: Headers): number {
+  static getBucketBlockDurationMs (headers: Headers, ignoreRemaining: boolean): number {
     const {
       RATELIMIT_REMAINING,
       RATELIMIT_RESET_AFTER
     } = Bucket.constants
     const rateLimitRemaining = Number(headers.get(RATELIMIT_REMAINING))
-    if (rateLimitRemaining === 0) {
+    if (rateLimitRemaining === 0 || ignoreRemaining) {
       // Reset-After contains seconds
       const resetAfterMs = Number(headers.get(RATELIMIT_RESET_AFTER)) * 1000
       if (isNaN(resetAfterMs)) {
@@ -172,12 +174,12 @@ class Bucket extends EventEmitter {
    * 
    * @returns {number} Milliseconds
    */
-  static getBlockedDuration (headers: Headers): number {
+  static getBlockedDuration (headers: Headers, ignoreRemaining = false): number {
     // Global limits take priority
     if (this.isGloballyBlocked(headers)) {
       return this.getGlobalBlockDurationMs(headers)
     } else if (this.hasBucketLimits(headers)) {
-      return this.getBucketBlockDurationMs(headers)
+      return this.getBucketBlockDurationMs(headers, ignoreRemaining)
     } else {
       return -1
     }
@@ -321,16 +323,16 @@ class Bucket extends EventEmitter {
    */
   private async handle429Response (apiRequest: APIRequest, res: Response): Promise<Response> {
     const { headers } = res
-    const blockedDurationMs = Bucket.getBlockedDuration(headers)
+    const blockedDurationMs = Bucket.getBlockedDuration(headers, true)
     this.debug(`429 hit for ${apiRequest.toString()}`)
-    if (blockedDurationMs === -1) {
-      throw new Error('429 response')
-    }
     if (Bucket.isGloballyBlocked(headers)) {
       this.debug(`Global limit was hit after ${apiRequest.toString()}`)
       this.emit('globalRateLimit', apiRequest, blockedDurationMs)
     } else {
       this.emit('rateLimit', apiRequest, blockedDurationMs)
+    }
+    if (blockedDurationMs === -1) {
+      throw new Error('429 response with no blocked duration')
     }
     /**
      * 429 is considered an invalid request, and is counted towards
