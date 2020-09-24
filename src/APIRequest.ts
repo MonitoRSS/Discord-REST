@@ -64,6 +64,9 @@ class APIRequest {
     }
   }
 
+  /**
+   * Returns the string representation for debug logging
+   */
   toString (): string {
     return `${this.route} (#${this.id})`
   }
