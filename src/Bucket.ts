@@ -18,14 +18,16 @@ declare interface Bucket {
 }
 
 /**
- * Handles the queueing of requests of a particular bucket
+ * Handles queuing and exectuion of API requests that share
+ * the same rate limits
  */
 class Bucket extends EventEmitter {
   /**
    * The bucket ID. If it is a temporary bucket whose actual
    * ID has not been returned from Discord, it would be the
-   * route string itself. Otherwise, it's the bucket ID 
-   * returned by Discord in the X-RateLimit-Bucket header.
+   * route string itself. Otherwise, it's a resolved string
+   * that takes into account the bucket header returned in
+   * Discord's headers combined with major route parameters
    */
   id: string
   /**
@@ -150,10 +152,9 @@ class Bucket extends EventEmitter {
 
   /**
    * Determine how long in ms the global block is from request headers
-   * 
    * Returns -1 if no block duration is found in headers
    * 
-   * @returns {number} Milliseconds
+   * @returns {number} Milliseconds.
    */
   static getGlobalBlockDurationMs (headers: Headers): number {
     const {
@@ -169,7 +170,6 @@ class Bucket extends EventEmitter {
   /**
    * Determine how long to block this bucket in ms from
    * request headers before executing any further requests
-   * 
    * Returns -1 if no block duration is found in headers
    * 
    * @returns {number} Milliseconds
@@ -187,7 +187,10 @@ class Bucket extends EventEmitter {
 
   /**
    * Emit the bucket ID from request headers as an event for
-   * the RESTExecutor to map a url to its bucket in the future
+   * the RESTHandler to map a url to its bucket in the future.
+   * 
+   * API requests by default are allocated to temporary buckets.
+   * Recognizing it will de-allocate it from the temporary buckets.
    */
   private recognizeURLBucket (url: string, headers: Headers): void {
     if (!Bucket.hasBucketLimits(headers)) {
@@ -202,7 +205,7 @@ class Bucket extends EventEmitter {
   }
 
   /**
-   * Block this executor from further requests for a duration
+   * Block this bucket from executing new requests for a duration
    */
   public block (durationMs: number): void {
     if (this.timer) {
@@ -216,8 +219,10 @@ class Bucket extends EventEmitter {
   }
 
   /**
-   * Copys the block to another bucket. Used when temporary
-   * buckets are removed, but still has a block on them
+   * Copys the block to another bucket. Used when a new bucket will
+   * replace a temporary bucket, but the temporary bucket still has
+   * a block on it. The block is then transferred from the temporary
+   * bucket to the new one.
    */
   public copyBlockTo (otherBucket: Bucket): void {
     if (!this.blockedUntil) {
@@ -273,8 +278,10 @@ class Bucket extends EventEmitter {
         await this.waitForRequest(previousRequest)
         const result = await this.execute(apiRequest)
         this.queue.splice(this.queue.indexOf(apiRequest), 1)
-        // If the queue is empty, emit an event and allow
-        // it to be deleted if it is pending deletion
+        /**
+         * If the queue is empty, emit an event that allows the
+         * RESTHandler to delete this bucket if it is pending deletion
+         */
         if (this.queue.length === 0) {
           this.debug('Finished entire queue')
           this.emit('finishedAll')
