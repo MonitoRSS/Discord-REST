@@ -272,6 +272,12 @@ class Bucket extends EventEmitter {
      * the queue push must be synchronous
      */
     this.debug(`Enqueuing request ${apiRequest.toString()}`)
+    /**
+     * Access the last one in the queue *before* we enter the
+     * promise since during this part of the function, the
+     * calls are synchronous. Every request can then await
+     * for the previous request wihin the promise.
+     */
     const previousRequest = this.queue[this.queue.length - 1]
     this.queue.push(apiRequest)
     // eslint-disable-next-line no-async-promise-executor
