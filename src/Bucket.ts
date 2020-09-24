@@ -275,14 +275,18 @@ class Bucket extends EventEmitter {
     /**
      * Access the last one in the queue *before* we enter the
      * promise since the call is synchronous with this part of
-     * the function. The request can then await the previous
-     * request within the returned promise
+     * the function.
      */
     const previousRequest = this.queue[this.queue.length - 1]
     this.queue.push(apiRequest)
     // eslint-disable-next-line no-async-promise-executor
     return new Promise(async (resolve, reject) => {
       try {
+        /**
+         * Every request waits for the previous request in a
+         * recursive-like pattern. Every request is guaranteed
+         * to only be executed after all previous ones were executed.
+         */
         await this.waitForRequest(previousRequest)
         const result = await this.execute(apiRequest)
         this.queue.splice(this.queue.indexOf(apiRequest), 1)
