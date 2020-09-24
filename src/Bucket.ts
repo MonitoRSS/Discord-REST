@@ -116,7 +116,8 @@ class Bucket extends EventEmitter {
   /**
    * Determine how long the bucket block is in ms from request headers.
    * Discord may also still return 429 if remaining is >0. We ignore
-   * remaining in the event of a 429 response.
+   * remaining in the event of a 429 response. Discord returns the
+   * duration as seconds.
    * 
    * Returns -1 if no block duration is found in headers
    * 
@@ -152,7 +153,8 @@ class Bucket extends EventEmitter {
 
   /**
    * Determine how long in ms the global block is from request headers
-   * Returns -1 if no block duration is found in headers
+   * Returns -1 if no block duration is found in headers. Discord returns
+   * this value as milliseconds.
    * 
    * @returns {number} Milliseconds.
    */
