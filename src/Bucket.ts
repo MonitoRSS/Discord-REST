@@ -284,8 +284,8 @@ class Bucket extends EventEmitter {
       try {
         /**
          * Every request waits for the previous request in a
-         * recursive-like pattern. Every request is guaranteed
-         * to only be executed after all previous ones were executed.
+         * recursive-like pattern, and is guaranteed to only
+         * be executed after all previous requests were executed
          */
         await this.waitForRequest(previousRequest)
         const result = await this.execute(apiRequest)
