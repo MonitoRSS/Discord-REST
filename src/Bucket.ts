@@ -264,13 +264,12 @@ class Bucket extends EventEmitter {
   /**
    * Queue up an API request for execution.
    * 
+   * This function must not be prefixed with async since
+   * the queue push must be synchronous
+   * 
    * @returns Node fetch response
    */
   public enqueue (apiRequest: APIRequest): Promise<Response> {
-    /**
-     * This function must not be prefixed with async since
-     * the queue push must be synchronous
-     */
     this.debug(`Enqueuing request ${apiRequest.toString()}`)
     /**
      * Access the last one in the queue *before* we enter the
