@@ -68,7 +68,6 @@
   },
   "exclude": [
     "src/discord.ts",
-    "dist",
-    "src/**/*.test.ts"
+    "dist"
   ]
 }
