@@ -274,9 +274,9 @@ class Bucket extends EventEmitter {
     this.debug(`Enqueuing request ${apiRequest.toString()}`)
     /**
      * Access the last one in the queue *before* we enter the
-     * promise since during this part of the function, the
-     * calls are synchronous. Every request can then await
-     * for the previous request wihin the promise.
+     * promise since the call is synchronous with this part of
+     * the function. The request can then await the previous
+     * request within the returned promise
      */
     const previousRequest = this.queue[this.queue.length - 1]
     this.queue.push(apiRequest)
