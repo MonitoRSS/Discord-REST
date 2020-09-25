@@ -145,7 +145,7 @@ class RESTHandler extends EventEmitter {
     ++this.invalidRequestsCount
     if (this.invalidRequestsCount === this.invalidRequestsThreshold) {
       // Block all buckets from executing requests for 10 min
-      this.blockBucketsByDuration(1000 * 60 * 10)
+      this.blockGloballyByDuration(1000 * 60 * 10)
     }
   }
 
