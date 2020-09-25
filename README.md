@@ -111,12 +111,20 @@ const options = {
    */
   requestTimeoutRetries: 3,
   /**
+   * Multiple of the duration to block the queue by when a global
+   * limit is hit. It could be safer to block longer than what Discord
+   * suggests for safety.
+   * 
+   * Default is 1
+   */
+  globalBlockDurationMultiple: 1,
+  /**
    * Options for PQueue that holds enqueues all requests
    * See https://github.com/sindresorhus/p-queue
    * 
    * Default is {interval: 1000, intervalCap: 20}
    */
-  pqueueOptions?: Options<PriorityQueue, DefaultAddOptions>
+  pqueueOptions: {interval: 1000, intervalCap: 20}
 }
 
 const restHandler = new RESTHandler(options)

@@ -28,12 +28,7 @@ type RESTHandlerOptions = {
   /**
    * Number of request retries on API request timeouts
    */
-  requestTimeoutRetries?: number
-  /**
-   * Options for PQueue that holds enqueues all requests
-   * See https://github.com/sindresorhus/p-queue
-   */
-  pqueueOptions?: Options<PriorityQueue, DefaultAddOptions>
+  requestTimeoutRetries?: number,
   /**
    * Multiple of the duration to block the queue by when a global
    * limit is hit. It could be safer to block longer than what Discord
@@ -42,6 +37,11 @@ type RESTHandlerOptions = {
    * Default is 1
    */
   globalBlockDurationMultiple?: number
+  /**
+   * Options for PQueue that holds enqueues all requests
+   * See https://github.com/sindresorhus/p-queue
+   */
+  pqueueOptions?: Options<PriorityQueue, DefaultAddOptions>
 }
 
 declare interface RESTHandler {
