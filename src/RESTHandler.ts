@@ -40,6 +40,7 @@ declare interface RESTHandler {
   emit(event: 'globalRateLimit', apiRequest: APIRequest, blockedDurationMs: number): boolean
   emit(event: 'invalidRequest', apiRequest: APIRequest, countSoFar: number): boolean
   emit(event: 'idle'|'active'): boolean
+  emit(event: 'invalidRequestsThreshold'): boolean
   /**
    * When a bucket rate limit is encountered
    */
@@ -57,6 +58,11 @@ declare interface RESTHandler {
    * Events related to PQueue that holds the requests tasks
    */
   on(event: 'idle'|'active', listener: () => void): this
+  /**
+   * When the number of invalid requests threshold has been reached,
+   * all requests are delayed by 10 minutes
+   */
+  on(event: 'invalidRequestsThreshold', listener: () => void): this
 }
 
 /**
