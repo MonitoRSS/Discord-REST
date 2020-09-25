@@ -2,6 +2,8 @@ import Bucket from "./Bucket"
 import { RequestInit, Response } from "node-fetch";
 import APIRequest from "./APIRequest";
 import { EventEmitter } from "events";
+import PQueue, { DefaultAddOptions, Options } from 'p-queue'
+import PriorityQueue from "p-queue/dist/priority-queue";
 
 type RESTHandlerOptions = {
   /**
@@ -27,12 +29,17 @@ type RESTHandlerOptions = {
    * Number of request retries on API request timeouts
    */
   requestTimeoutRetries?: number
+  /**
+   * Options for PQueue that holds enqueues all requests
+   */
+  pqueueOptions?: Options<PriorityQueue, DefaultAddOptions>
 }
 
 declare interface RESTHandler {
   emit(event: 'rateLimit', apiRequest: APIRequest, blockedDurationMs: number): boolean
   emit(event: 'globalRateLimit', apiRequest: APIRequest, blockedDurationMs: number): boolean
   emit(event: 'invalidRequest', apiRequest: APIRequest, countSoFar: number): boolean
+  emit(event: 'idle'|'active'): boolean
   /**
    * When a bucket rate limit is encountered
    */
@@ -46,6 +53,10 @@ declare interface RESTHandler {
    * is encountered.
    */
   on(event: 'invalidRequest', listener: (apiRequest: APIRequest, countSoFar: number) => void): this
+  /**
+   * Events related to PQueue that holds the requests tasks
+   */
+  on(event: 'idle'|'active', listener: () => void): this
 }
 
 /**
@@ -92,12 +103,28 @@ class RESTHandler extends EventEmitter {
    * is 10,000
    */
   private readonly invalidRequestsThreshold: number
+  /**
+   * Stores all API requests to be executed at a maximum
+   * rate of 14 requests per second
+   */
+  private readonly queue: PQueue;
+  private queueBlockTimer: NodeJS.Timer|null = null;
   private readonly userOptions: RESTHandlerOptions
 
   constructor (options?: RESTHandlerOptions) {
     super()
     this.userOptions = options || {}
     this.invalidRequestsThreshold = options?.invalidRequestsThreshold || 5000
+    this.queue = new PQueue({
+      interval: 1000,
+      intervalCap: 20,
+      ...options?.pqueueOptions
+    })
+    /**
+     * Bubble up important PQueue events
+     */
+    this.queue.on('idle', () => this.emit('idle'))
+    this.queue.on('active', () => this.emit('active'))
     if (options?.delayOnInvalidThreshold !== false) {
       /**
        * Reset the invalid requests count every 10 minutes
@@ -129,7 +156,7 @@ class RESTHandler extends EventEmitter {
     bucket.on('recognizeURLBucket', this.recognizeURLBucket.bind(this))
     bucket.on('globalRateLimit', (apiRequest, durationMs) => {
       this.emit('globalRateLimit', apiRequest, durationMs)
-      this.blockBucketsByDuration(durationMs)
+      this.blockGloballyByDuration(durationMs)
     })
     bucket.on('rateLimit', (apiRequest: APIRequest, durationMs: number) => {
       this.emit('rateLimit', apiRequest, durationMs)
@@ -194,6 +221,23 @@ class RESTHandler extends EventEmitter {
   }
 
   /**
+   * Blocks all queued API requests and buckets for a duration
+   * If there's already a timer, the previous timer is cleared
+   * and is recreated
+   */
+  private blockGloballyByDuration (durationMs: number) {
+    this.blockBucketsByDuration(durationMs)
+    if (this.queueBlockTimer) {
+      clearTimeout(this.queueBlockTimer)
+    }
+    this.queue.pause()
+    this.queueBlockTimer = setTimeout(() => {
+      this.queue.start()
+      this.queueBlockTimer = null
+    }, durationMs)
+  }
+
+  /**
    * Block all buckets from running, or override buckets'
    * own timers if it's longer with the specified
    * duration
@@ -211,7 +255,6 @@ class RESTHandler extends EventEmitter {
         if (globalBlockUntil > blockedUntil) {
           bucket.block(durationMs)
         }
-
       }
     })
   }
@@ -265,7 +308,7 @@ class RESTHandler extends EventEmitter {
     const apiRequest = new APIRequest(route, options, requestTimeout, requestTimeoutRetries)
     const url = apiRequest.route
     const bucket = this.getBucketForUrl(url)
-    return bucket.enqueue(apiRequest)
+    return this.queue.add(() => bucket.enqueue(apiRequest))
   }
 }
 
