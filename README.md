@@ -139,8 +139,8 @@ restHandler.on('invalidRequest', (apiRequest, countSoFar) => {
 This library will delay and queue up all further requests for 10 minutes after it encounters 5,000 invalid requests within 10 minutes. You can listen to this event.
 
 ```ts
-restHandler.on('invalidRequestsThreshold', () => {
-  console.error(`Number of invalid requests exceeded threshold, delaying all tasks by 10 minutes`)
+restHandler.on('invalidRequestsThreshold', (threshold) => {
+  console.error(`Number of invalid requests exceeded threshold (${threshold}), delaying all tasks by 10 minutes`)
 })
 ```
 
