@@ -2,7 +2,9 @@
 
 [node-fetch](https://github.com/node-fetch/node-fetch) wrapper meant to gracefully handle the frightening and confusing monster of Discord rate limits.
 
-All requests are executed in order. The goal of this library is to minimize or completely avoid bucket ratelimits. The only rate limits you should be hitting are global ones since Discord does not provide information on global limits for preemptive actions until you actually hit one.
+All requests are executed in order. The goal of this library is to minimize both bucket and global rate limits with a minimal public interface for maximum flexibility.
+
+By default, outgoing requests are throttled at a maximum of 20/second to avoid global rate limits. Since Discord does not provide global rate limit information for pre-emptive action, this is a guesstimate that has worked well for me - but this is a configurable option.
 
 ### Table of Contents
 * [Install](#install)
