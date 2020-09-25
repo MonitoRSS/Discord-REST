@@ -34,6 +34,14 @@ type RESTHandlerOptions = {
    * See https://github.com/sindresorhus/p-queue
    */
   pqueueOptions?: Options<PriorityQueue, DefaultAddOptions>
+  /**
+   * Multiple of the duration to block the queue by when a global
+   * limit is hit. It could be safer to block longer than what Discord
+   * suggests for safety.
+   * 
+   * Default is 1
+   */
+  globalBlockDurationMultiple?: number
 }
 
 declare interface RESTHandler {
@@ -115,6 +123,11 @@ class RESTHandler extends EventEmitter {
    * rate of 14 requests per second
    */
   private readonly queue: PQueue;
+  /**
+   * Multiply the global block duration by this number whenever
+   * a global rate limit is hit
+   */
+  private readonly globalBlockDurationMultiple: number
   private queueBlockTimer: NodeJS.Timer|null = null;
   private readonly userOptions: RESTHandlerOptions
 
@@ -122,6 +135,7 @@ class RESTHandler extends EventEmitter {
     super()
     this.userOptions = options || {}
     this.invalidRequestsThreshold = options?.invalidRequestsThreshold || 5000
+    this.globalBlockDurationMultiple = options?.globalBlockDurationMultiple || 1
     this.queue = new PQueue({
       interval: 1000,
       intervalCap: 20,
@@ -164,7 +178,7 @@ class RESTHandler extends EventEmitter {
     bucket.on('recognizeURLBucket', this.recognizeURLBucket.bind(this))
     bucket.on('globalRateLimit', (apiRequest, durationMs) => {
       this.emit('globalRateLimit', apiRequest, durationMs)
-      this.blockGloballyByDuration(durationMs)
+      this.blockGloballyByDuration(durationMs * this.globalBlockDurationMultiple)
     })
     bucket.on('rateLimit', (apiRequest: APIRequest, durationMs: number) => {
       this.emit('rateLimit', apiRequest, durationMs)
