@@ -41,7 +41,7 @@ declare interface RESTHandler {
   emit(event: 'globalRateLimit', apiRequest: APIRequest, blockedDurationMs: number): boolean
   emit(event: 'invalidRequest', apiRequest: APIRequest, countSoFar: number): boolean
   emit(event: 'idle'|'active'): boolean
-  emit(event: 'invalidRequestsThreshold'): boolean
+  emit(event: 'invalidRequestsThreshold', threshold: number): boolean
   /**
    * When a bucket rate limit is encountered
    */
@@ -63,7 +63,7 @@ declare interface RESTHandler {
    * When the number of invalid requests threshold has been reached,
    * all requests are delayed by 10 minutes
    */
-  on(event: 'invalidRequestsThreshold', listener: () => void): this
+  on(event: 'invalidRequestsThreshold', listener: (threshold: number) => void): this
 }
 
 /**
@@ -153,6 +153,7 @@ class RESTHandler extends EventEmitter {
     if (this.invalidRequestsCount === this.invalidRequestsThreshold) {
       // Block all buckets from executing requests for 10 min
       this.blockGloballyByDuration(1000 * 60 * 10)
+      this.emit('invalidRequestsThreshold', this.invalidRequestsCount)
     }
   }
 
