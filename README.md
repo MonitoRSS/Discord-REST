@@ -109,7 +109,14 @@ const options = {
    * 
    * Default is 3
    */
-  requestTimeoutRetries: 3
+  requestTimeoutRetries: 3,
+  /**
+   * Options for PQueue that holds enqueues all requests
+   * See https://github.com/sindresorhus/p-queue
+   * 
+   * Default is {interval: 1000, intervalCap: 20}
+   */
+  pqueueOptions?: Options<PriorityQueue, DefaultAddOptions>
 }
 
 const restHandler = new RESTHandler(options)
@@ -129,9 +136,15 @@ restHandler.on('invalidRequest', (apiRequest, countSoFar) => {
 })
 ```
 
-This library will delay and queue up all further requests for 10 minutes after it encounters 5,000 invalid requests within 10 minutes.
+This library will delay and queue up all further requests for 10 minutes after it encounters 5,000 invalid requests within 10 minutes. You can listen to this event.
 
-If you'd like to specifically listen for rate limit hits, you can listen to the following events.
+```ts
+restHandler.on('invalidRequestsThreshold', () => {
+  console.error(`Number of invalid requests exceeded threshold, delaying all tasks by 10 minutes`)
+})
+```
+
+If you'd like to specifically listen for rate limit hits, you can use the following events.
 
 ```ts
 // Listen for bucket rate limit encounters

@@ -31,6 +31,7 @@ type RESTHandlerOptions = {
   requestTimeoutRetries?: number
   /**
    * Options for PQueue that holds enqueues all requests
+   * See https://github.com/sindresorhus/p-queue
    */
   pqueueOptions?: Options<PriorityQueue, DefaultAddOptions>
 }
