@@ -327,10 +327,14 @@ class RESTHandler extends EventEmitter {
    */
   public async fetch (route: string, options: RequestInit): Promise<Response> {
     const { requestTimeout, requestTimeoutRetries } = this.userOptions
-    const apiRequest = new APIRequest(route, options, requestTimeout, requestTimeoutRetries)
+    const apiRequest = new APIRequest(route, options, {
+      timeout: requestTimeout,
+      maxAttempts: requestTimeoutRetries,
+    })
     const url = apiRequest.route
     const bucket = this.getBucketForUrl(url)
-    return this.queue.add(() => bucket.enqueue(apiRequest))
+    const result = await this.queue.add(() => bucket.enqueue(apiRequest))
+    return result
   }
 }
 

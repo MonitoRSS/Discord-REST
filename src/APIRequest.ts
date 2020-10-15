@@ -1,6 +1,17 @@
 import fetch, { RequestInit, Response } from 'node-fetch'
 import AbortController from 'abort-controller'
 
+type RequestOptions = {
+  /**
+   * The time until this request will timeout
+   */
+  timeout?: number,
+  /**
+   * Maximum number of failed attempts before rejecting
+   */
+  maxAttempts?: number
+}
+
 class APIRequest {
   /**
    * Full API request URL
@@ -37,12 +48,12 @@ class APIRequest {
   readonly maxAttempts: number
 
 
-  constructor (route: string, options?: RequestInit, timeout = 10000, maxAttempts = 3) {
+  constructor (route: string, fetchOptions?: RequestInit, requestOptions?: RequestOptions) {
     this.route = route
-    this.options = options
+    this.options = fetchOptions
     this.id = ++APIRequest.lastId
-    this.timeout = timeout
-    this.maxAttempts = maxAttempts
+    this.timeout = requestOptions?.timeout || 1000
+    this.maxAttempts = requestOptions?.maxAttempts || 3
   }
 
   /**
