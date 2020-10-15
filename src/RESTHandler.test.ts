@@ -93,4 +93,57 @@ describe('RESTHandler', () => {
       ])
     })
   })
+  it('emits a long lived request when a request takes too long', async () => {
+    // Set up the request to succeed only after 1 hour
+    jest.spyOn(APIRequest.prototype, 'execute')
+      .mockImplementation(async () => new Promise((resolve) => {
+        setTimeout(() => {
+          resolve(okResponse)
+        }, 1000 * 60 * 60) // 1 hour
+      }))
+    const handler = new RESTHandler()
+    const handlerEmit = jest.spyOn(handler, 'emit')
+    // Enqueue all requests
+    const prom1 = handler.fetch('https://whatever.com/channels/123', {})
+    await flushPromises()
+    // Check longLivedRequest has not been emitted
+    expect(handlerEmit.mock.calls.find(call => call[0] === 'longLivedRequest'))
+      .not.toBeDefined()
+    // Wait 30 minutes
+    jest.advanceTimersByTime(1000 * 60 * 30)
+    // longLivedRequest should have been emitted
+    const longLivedCall = handlerEmit.mock.calls.find(call => call[0] === 'longLivedRequest')
+    expect(longLivedCall).toBeDefined()
+    // Let the request resolve after another 30 minutes, totaling up to 1 hour
+    jest.advanceTimersByTime(1000 * 60 * 30)
+    await prom1
+  })
+  it('does not emit a long lived request if a request finishes quickly', async () => {
+    // Set up the request to succeed after 2 seconds
+    jest.spyOn(APIRequest.prototype, 'execute')
+      .mockImplementation(async () => new Promise((resolve) => {
+        setTimeout(() => {
+          resolve(okResponse)
+        }, 1000 * 2)
+      }))
+    const handler = new RESTHandler()
+    const handlerEmit = jest.spyOn(handler, 'emit')
+    // Enqueue all requests
+    const prom1 = handler.fetch('https://whatever.com/channels/123', {})
+    await flushPromises()
+    // Check longLivedRequest has not been emitted
+    expect(handlerEmit.mock.calls.find(call => call[0] === 'longLivedRequest'))
+      .not.toBeDefined()
+    // Let the request succeed
+    jest.advanceTimersByTime(1000 * 2)
+    await prom1
+    // Check longLivedRequest was not emitted after it succeeded
+    expect(handlerEmit.mock.calls.find(call => call[0] === 'longLivedRequest'))
+      .not.toBeDefined()
+    // Wait 30 minutes
+    jest.advanceTimersByTime(1000 * 60 * 30)
+    // longLivedRequest still should not have been emitted
+    expect(handlerEmit.mock.calls.find(call => call[0] === 'longLivedRequest'))
+      .not.toBeDefined()
+  })
 })

@@ -4,6 +4,7 @@ import APIRequest from "./APIRequest";
 import { EventEmitter } from "events";
 import PQueue, { DefaultAddOptions, Options } from 'p-queue'
 import PriorityQueue from "p-queue/dist/priority-queue";
+import APIRequestLifetime from "./util/APIRequestLifetime";
 
 type RESTHandlerOptions = {
   /**
@@ -50,6 +51,7 @@ declare interface RESTHandler {
   emit(event: 'invalidRequest', apiRequest: APIRequest, countSoFar: number): boolean
   emit(event: 'idle'|'active'): boolean
   emit(event: 'invalidRequestsThreshold', threshold: number): boolean
+  emit(event: 'longLivedRequest', longLivedRequests: APIRequestLifetime): boolean
   /**
    * When a bucket rate limit is encountered
    */
@@ -72,6 +74,10 @@ declare interface RESTHandler {
    * all requests are delayed by 10 minutes
    */
   on(event: 'invalidRequestsThreshold', listener: (threshold: number) => void): this
+  /**
+   * Emitted IF there exists a request that took too long to finish (> 30 minutes)
+   */
+  on(event: 'longLivedRequest', listener: (longLivedRequest: APIRequestLifetime) => void): this
 }
 
 /**
@@ -318,6 +324,18 @@ class RESTHandler extends EventEmitter {
     }
   }
 
+  private startTrackingRequestLifetime (apiRequest: APIRequest, bucket: Bucket) {
+    const lifetime = new APIRequestLifetime(apiRequest, bucket)
+    lifetime.once('longLived', () => {
+      this.emit('longLivedRequest', lifetime)
+    })
+    return lifetime
+  }
+
+  private stopTrackingRequestLifetime (lifetime: APIRequestLifetime) {
+    lifetime.end()
+  }
+
   /**
    * Fetch a resource from Discord's API
    * 
@@ -333,7 +351,9 @@ class RESTHandler extends EventEmitter {
     })
     const url = apiRequest.route
     const bucket = this.getBucketForUrl(url)
+    const lifetime = this.startTrackingRequestLifetime(apiRequest, bucket)
     const result = await this.queue.add(() => bucket.enqueue(apiRequest))
+    this.stopTrackingRequestLifetime(lifetime)
     return result
   }
 }
