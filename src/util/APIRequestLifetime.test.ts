@@ -38,8 +38,8 @@ describe('APIRequestLifetime', () => {
   describe('hasFinishedRequest', () => {
     it('works', () => {
       const apiRequest = {
-        fetchSuccess: true
-      } as APIRequest
+        hasSucceeded: () => true
+      } as unknown as APIRequest
       const bucket = {} as Bucket
       const lifetime = new APIRequestLifetime(apiRequest, bucket)
       expect(lifetime.hasFinishedRequest())

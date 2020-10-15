@@ -11,7 +11,7 @@ class APIRequestLifetime extends EventEmitter {
   /**
    * The APIRequest we're tracking
    */
-  private request: APIRequest
+  public request: APIRequest
   /**
    * The bucket the API request belongs to
    */
@@ -46,7 +46,7 @@ class APIRequestLifetime extends EventEmitter {
    * request yet. Otherwise, the boolean value indicates its fetch success state.
    */
   public hasFinishedRequest (): boolean|undefined {
-    return this.request.fetchSuccess
+    return this.request.hasSucceeded()
   }
 
   /**

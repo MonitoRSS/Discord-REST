@@ -16,15 +16,15 @@ class APIRequest {
   /**
    * Full API request URL
    */
-  route: string
+  readonly route: string
   /**
    * node-fetch options
    */
-  options?: RequestInit
+  readonly options?: RequestInit
   /**
    * ID used to track the completion of every request
    */
-  id: number
+  readonly id: number
   /**
    * Auto-incrementing ID for every request
    */
@@ -32,20 +32,20 @@ class APIRequest {
   /**
    * Number failed attempts of this request
    */
-  attempted = 0
+  private attempted = 0
   /**
    * If the fetch has been done or not. Value is true if fetch succeeded, false if it did not, or
    * undefined if fetch has not been executed
    */
-  fetchSuccess: boolean|undefined = undefined
+  private fetchSuccess: boolean|undefined = undefined
   /**
    * The time until this request will timeout
    */
-  readonly timeout: number
+  private readonly timeout: number
   /**
    * Maximum number of failed attempts before rejecting
    */
-  readonly maxAttempts: number
+  private readonly maxAttempts: number
 
 
   constructor (route: string, fetchOptions?: RequestInit, requestOptions?: RequestOptions) {
@@ -80,6 +80,10 @@ class APIRequest {
     } finally {
       clearTimeout(timeout)
     }
+  }
+
+  hasSucceeded(): boolean|undefined {
+    return this.fetchSuccess
   }
 
   /**
