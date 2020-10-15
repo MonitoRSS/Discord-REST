@@ -23,6 +23,11 @@ class APIRequest {
    */
   attempted = 0
   /**
+   * If the fetch has been done or not. Value is true if fetch succeeded, false if it did not, or
+   * undefined if fetch has not been executed
+   */
+  fetchSuccess: boolean|undefined = undefined
+  /**
    * The time until this request will timeout
    */
   readonly timeout: number
@@ -51,12 +56,14 @@ class APIRequest {
         ...this.options,
         signal: controller.signal
       })
+      this.fetchSuccess = true
       return res
     } catch (err) {
       if (err.type === 'aborted' && this.attempted++ < this.maxAttempts) {
         // If the request timed out, retry it
         return this.execute()
       } else {
+        this.fetchSuccess = false
         throw err
       }
     } finally {
