@@ -39,11 +39,11 @@ class APIRequest {
    */
   private fetchSuccess: boolean|undefined = undefined
   /**
-   * The time until this request will timeout
+   * The time until this request will timeout. Default is 10000.
    */
   private readonly timeout: number
   /**
-   * Maximum number of failed attempts before rejecting
+   * Maximum number of failed attempts before rejecting. Default is 3.
    */
   private readonly maxAttempts: number
 
@@ -52,7 +52,7 @@ class APIRequest {
     this.route = route
     this.options = fetchOptions
     this.id = ++APIRequest.lastId
-    this.timeout = requestOptions?.timeout || 1000
+    this.timeout = requestOptions?.timeout || 10000
     this.maxAttempts = requestOptions?.maxAttempts || 3
   }
 
