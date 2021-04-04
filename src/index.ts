@@ -1,11 +1,16 @@
 import RESTHandler from "./RESTHandler"
 import APIRequest from './APIRequest'
 import RESTProducer from './RESTProducer'
-import RESTConsumer from './RESTConsumer'
+import RESTConsumer, {
+  JobData,
+  JobResponse
+} from './RESTConsumer'
 
 export {
   RESTHandler,
   APIRequest,
   RESTProducer,
-  RESTConsumer
+  RESTConsumer,
+  JobData,
+  JobResponse
 }

@@ -17,12 +17,14 @@ class RESTProducer {
    * 
    * @param route The full HTTP route string
    * @param options node-fetch options
+   * @param meta Metadata to attach to the job for the Consumer to access
    * @returns The enqueued job
    */
-  public async enqueue(route: string, options: RequestInit): Promise<Job> {
+  public async enqueue(route: string, options: RequestInit, meta?: Record<string, unknown>): Promise<Job> {
     const jobData: JobData = {
       route,
-      options
+      options,
+      meta
     }
     const job = await this.queue.add(jobData, {
       removeOnComplete: true,
@@ -38,10 +40,11 @@ class RESTProducer {
    * 
    * @param route The full HTTP route string
    * @param options node-fetch options
+   * @param meta Metadata to attach to the job for the Consumer to access
    * @returns Fetch response details
    */
-  public async fetch<JSONResponse>(route: string, options: RequestInit): Promise<JobResponse<JSONResponse>> {
-    const job = await this.enqueue(route, options)
+  public async fetch<JSONResponse>(route: string, options: RequestInit, meta?: Record<string, unknown>): Promise<JobResponse<JSONResponse>> {
+    const job = await this.enqueue(route, options, meta)
     return job.finished();
   }
 }

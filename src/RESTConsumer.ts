@@ -5,6 +5,7 @@ import { RequestInit } from "node-fetch";
 export type JobData = {
   route: string
   options: RequestInit
+  meta?: Record<string, unknown>
 }
 
 export type JobResponse<DiscordResponse> = {
@@ -29,11 +30,11 @@ class RESTConsumer {
    * The queue that handles requests to Discord API. Requests are delayed according to received
    * rate limits from Discord, and has concurrncy throttled to 20/sec.
    */
-  private queue: Queue.Queue
+  public queue: Queue.Queue
   /**
    * The handler that will actually run the API requests.
    */
-  private handler: RESTHandler
+  public handler: RESTHandler
   /**
    * Timer used to coordinate when the queue is blocked and unblocked.
    */
