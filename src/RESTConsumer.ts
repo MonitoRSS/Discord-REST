@@ -45,6 +45,7 @@ class RESTConsumer {
     })
     this.queue.process(20, async ({ data }: { data: JobData }) => {
       const response = await this.handler.fetch(data.route, data.options)
+      // json must be returned here to provide a serializable object to store within Redis
       return response.json()
     })
     this.handler.on('invalidRequestsThreshold', async () => {
