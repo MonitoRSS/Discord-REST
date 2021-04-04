@@ -1,5 +1,5 @@
 import fetch, { Response } from 'node-fetch'
-import { mocked } from 'ts-jest'
+import { mocked } from 'ts-jest/utils'
 import APIRequest from './APIRequest'
 
 jest.mock('node-fetch')
