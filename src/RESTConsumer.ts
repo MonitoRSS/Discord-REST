@@ -1,8 +1,8 @@
 import RESTHandler, { RESTHandlerOptions } from "./RESTHandler";
 import Queue from 'bull'
-import { RequestInit, Response } from "node-fetch";
+import { RequestInit } from "node-fetch";
 
-type JobData = {
+export type JobData = {
   route: string
   options: RequestInit
 }
@@ -43,7 +43,10 @@ class RESTConsumer {
         duration: 1000
       }
     })
-    this.queue.process(20, ({ data }: { data: JobData }) => this.handler.fetch(data.route, data.options))
+    this.queue.process(20, async ({ data }: { data: JobData }) => {
+      const response = await this.handler.fetch(data.route, data.options)
+      return response.json()
+    })
     this.handler.on('invalidRequestsThreshold', async () => {
       // Block all buckets for 10 min. 10 min is the value given by Discord after a global limit hit.
       await this.blockGloballyByDuration(1000 * 60 * 10)
@@ -68,27 +71,6 @@ class RESTConsumer {
       await this.queue.resume()
       this.queueBlockTimer = null
     }, durationMs)
-  }
-
-  /**
-   * Fetch a resource from Discord's API.
-   * 
-   * @param route The full HTTP route string
-   * @param options node-fetch options
-   * @returns node-fetch response
-   */
-  public async enqueue(route: string, options: RequestInit): Promise<Response> {
-    const jobData: JobData = {
-      route,
-      options
-    }
-    const job = await this.queue.add(jobData, {
-      removeOnComplete: true,
-      removeOnFail: true,
-      // Attempts are handled by buckets
-      attempts: 1,
-    })
-    return job.finished()
   }
 }
 
