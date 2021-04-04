@@ -1,4 +1,4 @@
-import Queue from "bull"
+import Queue, { Job } from "bull"
 import { RequestInit } from "node-fetch"
 import { JobData, JobResponse } from './RESTConsumer'
 
@@ -12,14 +12,14 @@ class RESTProducer {
   }
 
   /**
-   * Fetch a resource from Discord's API. Requests are added to a Queue that a RESTConsumer
-   * consumes.
+   * Enqueue a request to Discord's API. If the API response is needed, the fetch method
+   * should be used instead of enqueue.
    * 
    * @param route The full HTTP route string
    * @param options node-fetch options
-   * @returns Fetch response details
+   * @returns The enqueued job
    */
-   public async enqueue<JSONResponse>(route: string, options: RequestInit): Promise<JobResponse<JSONResponse>> {
+  public async enqueue(route: string, options: RequestInit): Promise<Job> {
     const jobData: JobData = {
       route,
       options
@@ -30,7 +30,19 @@ class RESTProducer {
       // Attempts are handled by buckets
       attempts: 1,
     })
-    return job.finished()
+    return job
+  }
+
+  /**
+   * Fetch a resource from Discord's API.
+   * 
+   * @param route The full HTTP route string
+   * @param options node-fetch options
+   * @returns Fetch response details
+   */
+  public async fetch<JSONResponse>(route: string, options: RequestInit): Promise<JobResponse<JSONResponse>> {
+    const job = await this.enqueue(route, options)
+    return job.finished();
   }
 }
 
