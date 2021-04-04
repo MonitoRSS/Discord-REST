@@ -12,6 +12,8 @@ export type JobResponse<DiscordResponse> = {
   body: DiscordResponse
 }
 
+export const REDIS_QUEUE_NAME = 'discord-rest'
+
 /**
  * Used to consume and enqueue Discord API requests. There should only ever be one consumer that's
  * executing requests across all services for proper rate limit handling.
@@ -40,7 +42,7 @@ class RESTConsumer {
   constructor(redisUri: string, options?: RESTHandlerOptions) {
     this.redisUri = redisUri
     this.handler = new RESTHandler(options)
-    this.queue = new Queue('discord-rest', this.redisUri, {
+    this.queue = new Queue(REDIS_QUEUE_NAME, this.redisUri, {
       limiter: {
         // 20/sec is around the limit suggested by Discord
         // https://discord.com/developers/docs/topics/rate-limits

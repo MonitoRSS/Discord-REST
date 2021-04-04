@@ -1,6 +1,6 @@
 import Queue, { Job } from "bull"
 import { RequestInit } from "node-fetch"
-import { JobData, JobResponse } from './RESTConsumer'
+import { JobData, JobResponse, REDIS_QUEUE_NAME } from './RESTConsumer'
 
 class RESTProducer {
   private redisUri: string
@@ -8,7 +8,7 @@ class RESTProducer {
 
   constructor(redisUri: string) {
     this.redisUri = redisUri
-    this.queue = new Queue('discord-rest', this.redisUri)
+    this.queue = new Queue(REDIS_QUEUE_NAME, this.redisUri)
   }
 
   /**
