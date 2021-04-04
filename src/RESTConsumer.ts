@@ -7,6 +7,11 @@ export type JobData = {
   options: RequestInit
 }
 
+export type JobResponse<DiscordResponse> = {
+  status: number,
+  body: DiscordResponse
+}
+
 /**
  * Used to consume and enqueue Discord API requests. There should only ever be one consumer that's
  * executing requests across all services for proper rate limit handling.
@@ -45,8 +50,11 @@ class RESTConsumer {
     })
     this.queue.process(20, async ({ data }: { data: JobData }) => {
       const response = await this.handler.fetch(data.route, data.options)
-      // json must be returned here to provide a serializable object to store within Redis
-      return response.json()
+      // A custom object be returned here to provide a serializable object to store within Redis
+      return {
+        status: response.status,
+        body: await response.json()
+      } as JobResponse<Record<string, unknown>>
     })
     this.handler.on('invalidRequestsThreshold', async () => {
       // Block all buckets for 10 min. 10 min is the value given by Discord after a global limit hit.

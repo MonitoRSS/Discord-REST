@@ -1,6 +1,6 @@
 import Queue from "bull"
 import { RequestInit } from "node-fetch"
-import { JobData } from './RESTConsumer'
+import { JobData, JobResponse } from './RESTConsumer'
 
 class RESTProducer {
   private redisUri: string
@@ -17,9 +17,9 @@ class RESTProducer {
    * 
    * @param route The full HTTP route string
    * @param options node-fetch options
-   * @returns JSON response from Discord's API
+   * @returns Fetch response details
    */
-   public async enqueue<JSONResponse>(route: string, options: RequestInit): Promise<JSONResponse> {
+   public async enqueue<JSONResponse>(route: string, options: RequestInit): Promise<JobResponse<JSONResponse>> {
     const jobData: JobData = {
       route,
       options
