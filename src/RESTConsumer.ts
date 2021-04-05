@@ -39,9 +39,14 @@ class RESTConsumer {
    * Timer used to coordinate when the queue is blocked and unblocked.
    */
   private queueBlockTimer: NodeJS.Timer|null = null;
+  /**
+   * The auth header that should be applied to all requests.
+   */
+  private authHeader: string;
 
-  constructor(redisUri: string, options?: RESTHandlerOptions) {
+  constructor(redisUri: string, authHeader: string, options?: RESTHandlerOptions) {
     this.redisUri = redisUri
+    this.authHeader = authHeader
     this.handler = new RESTHandler(options)
     this.queue = new Queue(REDIS_QUEUE_NAME, this.redisUri, {
       limiter: {
@@ -51,13 +56,20 @@ class RESTConsumer {
         duration: 1000
       }
     })
-    this.queue.process(20, async ({ data }: { data: JobData }) => {
-      const response = await this.handler.fetch(data.route, data.options)
-      // A custom object be returned here to provide a serializable object to store within Redis
-      return {
-        status: response.status,
-        body: await response.json()
-      } as JobResponse<Record<string, unknown>>
+    this.queue.process(20, ({ data }: { data: JobData }) => {
+      return this.handler.fetch(data.route, {
+        ...data.options,
+        headers: {
+          Authorization: this.authHeader,
+          ...data.options.headers,
+        }
+      }).then(async response => {
+        // A custom object be returned here to provide a serializable object to store within Redis
+        return {
+          status: response.status,
+          body: await response.json()
+        }
+      })
     })
     this.handler.on('invalidRequestsThreshold', async () => {
       // Block all buckets for 10 min. 10 min is the value given by Discord after a global limit hit.
