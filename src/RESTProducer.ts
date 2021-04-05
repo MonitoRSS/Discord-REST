@@ -30,7 +30,7 @@ class RESTProducer {
       removeOnComplete: true,
       removeOnFail: true,
       // Attempts are handled by buckets
-      attempts: 1,
+      attempts: 3,
     })
     return job
   }

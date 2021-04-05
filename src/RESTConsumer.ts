@@ -63,11 +63,14 @@ class RESTConsumer {
           Authorization: this.authHeader,
           ...data.options.headers,
         }
-      }).then(async response => {
+      }).then(async res => {
+        if (res.status.toString().startsWith('5')) {
+          throw new Error(`Bad status code (${res.status})`)
+        }
         // A custom object be returned here to provide a serializable object to store within Redis
         return {
-          status: response.status,
-          body: await response.json()
+          status: res.status,
+          body: await res.json()
         }
       })
     })
