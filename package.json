@@ -37,7 +37,9 @@
   "dependencies": {
     "abort-controller": "^3.0.0",
     "bull": "^3.22.0",
+    "bull-board": "^1.5.1",
     "debug": "^4.2.0",
+    "express": "^4.17.1",
     "node-fetch": "^2.6.1"
   }
 }
