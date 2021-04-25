@@ -1,6 +1,6 @@
 # Discord-REST
 
-[node-fetch](https://github.com/node-fetch/node-fetch) wrapper meant to gracefully handle the frightening and confusing monster of Discord rate limits.
+A distributed Discord rate limit handler that uses [node-fetch](https://github.com/node-fetch/node-fetch)'s interface for easy use.
 
 Requesta are enqueued into Redis using a producer, and is consumed from Redis by a consumer. All requests are executed FIFO.
 
@@ -24,65 +24,65 @@ npm i @synzen/discord-rest
 
 1. Set up a `RESTConsumer` to get ready to consume incoming requests.
 
-```ts
-import { RESTConsumer } from "@synzen/discord-rest";
+   ```ts
+   import { RESTConsumer } from "@synzen/discord-rest";
 
-const consumer = new RESTConsumer(redisUri, `Bot ${botToken}`);
-// You can use the consumer to listen to important events. See #handle-invalid-requests section
-```
+   const consumer = new RESTConsumer(redisUri, `Bot ${botToken}`);
+   // You can use the consumer to listen to important events. See #handle-invalid-requests section
+   ```
 
 2. Set up a `RESTProducer` to send out API requests. Only requests that expect `Content-Type: application/json` is currently supported for simplicity and for it to be serializable to be stored within Redis.
 
-```ts
-import { RESTConsumer } from "@synzen/discord-rest";
+   ```ts
+   import { RESTConsumer } from "@synzen/discord-rest";
 
-const producer = new RESTProducer(redisUri);
+   const producer = new RESTProducer(redisUri);
 
-producer
-  .enqueue(
-    discordEndpoint,
-    {
-      // node-fetch options.
-      method: "POST",
-      body: JSON.stringify(payload),
-    },
-    {
-      // Any meta info you'd like to attach to this request
-      meta: 1,
-    }
-  )
-  .then((response) => {
-    // Status code (200, 400, etc.)
-    console.log(response.status);
-    // JSON response
-    console.log(response.body);
-  })
-  .catch(console.error);
-```
+   producer
+     .enqueue(
+       discordEndpoint,
+       {
+         // node-fetch options.
+         method: "POST",
+         body: JSON.stringify(payload),
+       },
+       {
+         // Any meta info you'd like to attach to this request
+         meta: 1,
+       }
+     )
+     .then((response) => {
+       // Status code (200, 400, etc.)
+       console.log(response.status);
+       // JSON response
+       console.log(response.body);
+     })
+     .catch(console.error);
+   ```
 
-If you execute multiple requests asynchronously, for example:
+   If you execute multiple requests asynchronously, for example:
 
-```ts
-for (let i = 0; i < 3; ++i) {
-  producer
-    .enqueue("https://discord.com/api/channels/channelID/messages", {
-      method: "POST",
-      body: JSON.stringify({
-        content: i,
-      }),
-    })
-    .then(() => console.log(i))
-    .catch(console.error);
-}
-```
+   ```ts
+   for (let i = 0; i < 3; ++i) {
+     producer
+       .enqueue("https://discord.com/api/channels/channelID/messages", {
+         method: "POST",
+         body: JSON.stringify({
+           content: i,
+         }),
+       })
+       .then(() => console.log(i))
+       .catch(console.error);
+   }
+   ```
 
-```shell
-1
-2
-3
-```
+   ```shell
+   1
+   2
+   3
+   ```
 
-You will notice that they are executed in order since they are all within the same rate limit bucket.
+   You will notice that they are executed in order since they are all within the same rate limit bucket.
 
 ### Custom Options
 
