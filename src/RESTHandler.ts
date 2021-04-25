@@ -64,10 +64,6 @@ declare interface RESTHandler {
    */
   on(event: 'invalidRequest', listener: (apiRequest: APIRequest, countSoFar: number) => void): this
   /**
-   * Events related to PQueue that holds the requests tasks
-   */
-  on(event: 'idle'|'active', listener: () => void): this
-  /**
    * When the number of invalid requests threshold has been reached,
    * all requests are delayed by 10 minutes
    */
