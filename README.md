@@ -2,15 +2,14 @@
 
 [node-fetch](https://github.com/node-fetch/node-fetch) wrapper meant to gracefully handle the frightening and confusing monster of Discord rate limits.
 
-All requests are executed in order. The goal of this library is to minimize both bucket and global rate limits with a minimal public interface for maximum flexibility.
+Requesta are enqueued into Redis using a producer, and is consumed from Redis by a consumer. All requests are executed FIFO.
 
-By default, outgoing requests are throttled at a maximum of 20/second to avoid global rate limits. Since Discord does not provide global rate limit information for pre-emptive action, this is a guesstimate that has worked well for me - but this is a configurable option.
+By default, outgoing requests are throttled at a maximum of 50/second ([the maximum allowed by Discord](https://discord.com/developers/docs/topics/rate-limits#global-rate-limit)).
 
 ### Table of Contents
 
 - [Install](#install)
 - [Usage](#usage)
-  - [Examples](#examples)
   - [Custom Options](#custom-options)
 - [Handle Invalid Requests](#handle-invalid-requests)
 - [Debugging](#debugging)
@@ -23,29 +22,41 @@ npm i @synzen/discord-rest
 
 ## Usage
 
-### Examples
+1. Set up a `RESTConsumer` to get ready to consume incoming requests.
 
 ```ts
-import { RESTHandler } from "@synzen/discord-rest";
+import { RESTConsumer } from "@synzen/discord-rest";
 
-const handler = new RESTHandler();
+const consumer = new RESTConsumer(redisUri, `Bot ${botToken}`);
+// You can use the consumer to listen to important events. See #handle-invalid-requests section
+```
 
-// node-fetch arguments
-handler
-  .fetch("https://discord.com/api/channels/channelID/messages", {
-    method: "POST",
-    body: JSON.stringify({
-      content: "abc",
-    }),
-    headers: {
-      Authorization: `Bot ${process.env.BOT_TOKEN}`,
-      // Specifically for JSON responses
-      "Content-Type": "application/json",
-      Accept: "application/json",
+2. Set up a `RESTProducer` to send out API requests. Only requests that expect `Content-Type: application/json` is currently supported for simplicity and for it to be serializable to be stored within Redis.
+
+```ts
+import { RESTConsumer } from "@synzen/discord-rest";
+
+const producer = new RESTProducer(redisUri);
+
+producer
+  .enqueue(
+    discordEndpoint,
+    {
+      // node-fetch options.
+      method: "POST",
+      body: JSON.stringify(payload),
     },
+    {
+      // Any meta info you'd like to attach to this request
+      meta: 1,
+    }
+  )
+  .then((response) => {
+    // Status code (200, 400, etc.)
+    console.log(response.status);
+    // JSON response
+    console.log(response.body);
   })
-  .then((res) => res.json())
-  .then(console.log)
   .catch(console.error);
 ```
 
@@ -53,17 +64,12 @@ If you execute multiple requests asynchronously, for example:
 
 ```ts
 for (let i = 0; i < 3; ++i) {
-  executor
-    .fetch("https://discord.com/api/channels/channelID/messages", {
+  producer
+    .enqueue("https://discord.com/api/channels/channelID/messages", {
       method: "POST",
       body: JSON.stringify({
         content: i,
       }),
-      headers: {
-        Authorization: `Bot ${process.env.BOT_TOKEN}`,
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
     })
     .then(() => console.log(i))
     .catch(console.error);
@@ -80,10 +86,10 @@ You will notice that they are executed in order since they are all within the sa
 
 ### Custom Options
 
-Options can be passed into the `RESTHandler`.
+Options can be passed into the `RESTConsumer`.
 
 ```ts
-import { RESTHandler } from "@synzen/discord-rest";
+import { RESTConsumer } from "@synzen/discord-rest";
 
 const options = {
   /**
@@ -135,7 +141,7 @@ const options = {
   maxRequestsPerSecond: 50,
 };
 
-const restHandler = new RESTHandler(options);
+const consumer = new RESTConsumer(options);
 ```
 
 ## Handle Invalid Requests
@@ -143,10 +149,10 @@ const restHandler = new RESTHandler(options);
 If you encounter too many invalid requests within a certain time frame, Discord will temporarily block your IP as noted in https://discord.com/developers/docs/topics/rate-limits#invalid-request-limit. An invalid request (as it is currently defined at the time of this writing), is a response of 429, 401, or 403. The hard limit for Discord is 10,000 invalid requests within 10 minutes. You can listen for invalid requests like so:
 
 ```ts
-const handler = new RESTHandler();
+const consumer = new RESTConsumer();
 
 // Listen for API responses with status codes 429, 401 and 403
-restHandler.on("invalidRequest", (apiRequest, countSoFar) => {
+consumer.handler.on("invalidRequest", (apiRequest, countSoFar) => {
   console.error(
     `Invalid request for ${apiRequest.toString()} (${countSoFar} total within 10 minutes)`
   );
@@ -156,7 +162,7 @@ restHandler.on("invalidRequest", (apiRequest, countSoFar) => {
 This library will delay and queue up all further requests for 10 minutes after it encounters 5,000 invalid requests within 10 minutes. You can listen to this event.
 
 ```ts
-restHandler.on("invalidRequestsThreshold", (threshold) => {
+consumer.handler.on("invalidRequestsThreshold", (threshold) => {
   console.error(
     `Number of invalid requests exceeded threshold (${threshold}), delaying all tasks by 10 minutes`
   );
@@ -167,14 +173,14 @@ If you'd like to specifically listen for rate limit hits, you can use the follow
 
 ```ts
 // Listen for bucket rate limit encounters
-restHandler.on("rateLimit", (apiRequest, blockedDurationMs) => {
+consumer.handler.on("rateLimit", (apiRequest, blockedDurationMs) => {
   console.error(
     `Bucket rate limit hit for ${apiRequest.toString()} (blocked for ${blockedDurationMs}ms)`
   );
 });
 
 // Listen for global rate limit encounters
-restHandler.on("globalRateLimit", (apiRequest, blockedDurationMs) => {
+consumer.handler.on("globalRateLimit", (apiRequest, blockedDurationMs) => {
   console.error(
     `Global rate limit hit for ${apiRequest.toString()} (blocked for ${blockedDurationMs}ms)`
   );
