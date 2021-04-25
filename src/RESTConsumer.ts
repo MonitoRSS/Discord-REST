@@ -1,6 +1,7 @@
 import RESTHandler, { RESTHandlerOptions } from "./RESTHandler";
 import Queue from 'bull'
 import { RequestInit } from "node-fetch";
+import { EventEmitter } from "events";
 
 export type JobData = {
   route: string
@@ -62,6 +63,8 @@ class RESTConsumer {
         ...data.options,
         headers: {
           Authorization: this.authHeader,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
           ...data.options.headers,
         }
       }).then(async res => {
