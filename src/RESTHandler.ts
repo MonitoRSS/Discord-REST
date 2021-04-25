@@ -35,6 +35,13 @@ export type RESTHandlerOptions = {
    * Default is 1
    */
   globalBlockDurationMultiple?: number
+  /**
+   * Maximum number of requests to execute per second.
+   * 
+   * Default is 50 since it is the maximum allowed by Discord
+   * https://discord.com/developers/docs/topics/rate-limits#global-rate-limit
+   */
+  maxRequestsPerSecond?: number
 }
 
 declare interface RESTHandler {

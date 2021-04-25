@@ -48,15 +48,16 @@ class RESTConsumer {
     this.redisUri = redisUri
     this.authHeader = authHeader
     this.handler = new RESTHandler(options)
+    // 50/sec is the maximum limit suggested by Discord
+    // https://discord.com/developers/docs/topics/rate-limits#global-rate-limit
+    const maxRequestsPerSecond = options?.maxRequestsPerSecond || 50
     this.queue = new Queue(REDIS_QUEUE_NAME, this.redisUri, {
       limiter: {
-        // 20/sec is around the limit suggested by Discord
-        // https://discord.com/developers/docs/topics/rate-limits
-        max: 20,
+        max: maxRequestsPerSecond,
         duration: 1000
       }
     })
-    this.queue.process(20, ({ data }: { data: JobData }) => {
+    this.queue.process(maxRequestsPerSecond, ({ data }: { data: JobData }) => {
       return this.handler.fetch(data.route, {
         ...data.options,
         headers: {
