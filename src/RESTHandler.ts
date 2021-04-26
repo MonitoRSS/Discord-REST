@@ -42,6 +42,10 @@ export type RESTHandlerOptions = {
    * https://discord.com/developers/docs/topics/rate-limits#global-rate-limit
    */
   maxRequestsPerSecond?: number
+  /**
+   * Name of the queue to be stored in Redis
+   */
+  queueName?: string
 }
 
 declare interface RESTHandler {

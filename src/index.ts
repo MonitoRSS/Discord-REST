@@ -3,7 +3,8 @@ import APIRequest from './APIRequest'
 import RESTProducer from './RESTProducer'
 import RESTConsumer, {
   JobData,
-  JobResponse
+  JobResponse,
+  REDIS_QUEUE_NAME
 } from './RESTConsumer'
 
 export {
@@ -12,5 +13,6 @@ export {
   RESTProducer,
   RESTConsumer,
   JobData,
-  JobResponse
+  JobResponse,
+  REDIS_QUEUE_NAME
 }

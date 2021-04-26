@@ -1,14 +1,15 @@
 import Queue, { Job } from "bull"
 import { RequestInit } from "node-fetch"
 import { JobData, JobResponse, REDIS_QUEUE_NAME } from './RESTConsumer'
+import { RESTHandlerOptions } from "./RESTHandler"
 
 class RESTProducer {
   private redisUri: string
   private queue: Queue.Queue
 
-  constructor(redisUri: string) {
+  constructor(redisUri: string, options?: Pick<RESTHandlerOptions, 'queueName'>) {
     this.redisUri = redisUri
-    this.queue = new Queue(REDIS_QUEUE_NAME, this.redisUri)
+    this.queue = new Queue(options?.queueName || REDIS_QUEUE_NAME, this.redisUri)
   }
 
   /**
