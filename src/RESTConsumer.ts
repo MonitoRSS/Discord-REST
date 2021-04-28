@@ -1,6 +1,6 @@
 import RESTHandler, { RESTHandlerOptions } from "./RESTHandler";
 import Queue from 'bull'
-import { RequestInit } from "node-fetch";
+import { RequestInit, Response } from "node-fetch";
 import { EventEmitter } from "events";
 
 export type JobData = {
@@ -67,16 +67,7 @@ class RESTConsumer {
           'Accept': 'application/json',
           ...data.options.headers,
         }
-      }).then(async res => {
-        if (res.status.toString().startsWith('5')) {
-          throw new Error(`Bad status code (${res.status})`)
-        }
-        // A custom object be returned here to provide a serializable object to store within Redis
-        return {
-          status: res.status,
-          body: await res.json()
-        }
-      })
+      }).then(this.handleJobFetchResponse)
     })
     this.handler.on('invalidRequestsThreshold', async () => {
       // Block all buckets for 10 min. 10 min is the value given by Discord after a global limit hit.
@@ -85,6 +76,28 @@ class RESTConsumer {
     this.handler.on('globalRateLimit', async (apiRequest, blockDurationMs) => {
       await this.blockGloballyByDuration(blockDurationMs)
     })
+  }
+
+  private async handleJobFetchResponse(res: Response) {
+    if (res.status.toString().startsWith('5')) {
+      throw new Error(`Bad status code (${res.status})`)
+    }
+
+    // A custom object be returned here to provide a serializable object to store within Redis
+    let body: any
+
+    if (res.status === 204) {
+      body = null
+    } else if (res.headers.get('Content-Type')?.includes('application/json')) {
+      body = await res.json()
+    } else {
+      body = await res.text()
+    }
+
+    return {
+      status: res.status,
+      body
+    }
   }
 
   /**
