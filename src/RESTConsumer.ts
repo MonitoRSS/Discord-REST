@@ -1,7 +1,6 @@
 import RESTHandler, { RESTHandlerOptions } from "./RESTHandler";
 import Queue from 'bull'
 import { RequestInit, Response } from "node-fetch";
-import { EventEmitter } from "events";
 
 export type JobData = {
   route: string
@@ -58,7 +57,7 @@ class RESTConsumer {
         duration: 1000
       }
     })
-    this.queue.process(maxRequestsPerSecond, ({ data }: { data: JobData }) => {
+    this.queue.process(200, ({ data }: { data: JobData }) => {
       return this.handler.fetch(data.route, {
         ...data.options,
         headers: {
