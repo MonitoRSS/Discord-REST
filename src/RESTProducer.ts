@@ -10,6 +10,14 @@ class RESTProducer {
   constructor(redisUri: string, options?: Pick<RESTHandlerOptions, 'queueName'>) {
     this.redisUri = redisUri
     this.queue = new Queue(options?.queueName || REDIS_QUEUE_NAME, this.redisUri)
+    /**
+     * Set the relevant listeners to infinite max listeners to prevent this.fetch calls
+     * creating event emitter warnings since it creates even emitters every time we need to wait
+     * for a job to complete.
+     */
+    this.queue.setMaxListeners(0)
+    // @ts-ignore
+    this.queue.eclient.setMaxListeners(0)
   }
 
   /**
