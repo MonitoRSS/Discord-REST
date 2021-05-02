@@ -21,7 +21,7 @@ class RESTProducer {
    * @param meta Metadata to attach to the job for the Consumer to access
    * @returns The enqueued job
    */
-  public async enqueue(route: string, options: RequestInit, meta?: Record<string, unknown>): Promise<Job> {
+  public async enqueue(route: string, options: RequestInit = {}, meta?: Record<string, unknown>): Promise<Job> {
     const jobData: JobData = {
       route,
       options,
@@ -44,7 +44,7 @@ class RESTProducer {
    * @param meta Metadata to attach to the job for the Consumer to access
    * @returns Fetch response details
    */
-  public async fetch<JSONResponse>(route: string, options: RequestInit, meta?: Record<string, unknown>): Promise<JobResponse<JSONResponse>> {
+  public async fetch<JSONResponse>(route: string, options: RequestInit = {}, meta?: Record<string, unknown>): Promise<JobResponse<JSONResponse>> {
     const job = await this.enqueue(route, options, meta)
     return job.finished();
   }
