@@ -185,6 +185,13 @@ consumer.handler.on("globalRateLimit", (apiRequest, blockedDurationMs) => {
     `Global rate limit hit for ${apiRequest.toString()} (blocked for ${blockedDurationMs}ms)`
   );
 });
+
+// Listen for cloudflare IP bans
+consumer.handler.on("cloudflareLimit", (apiRequest, blockedDurationMs) => {
+  console.error(
+    `Cloudflare IP ban detected for ${apiRequest.toString()} (blocked for ${blockedDurationMs}ms)`
+  );
+});
 ```
 
 ## Debugging
