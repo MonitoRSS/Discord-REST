@@ -69,10 +69,13 @@ class RESTConsumer {
       }).then(this.handleJobFetchResponse)
     })
     this.handler.on('invalidRequestsThreshold', async () => {
-      // Block all buckets for 10 min. 10 min is the value given by Discord after a global limit hit.
+      // Block everything for 10 min - a value given by Discord after a global limit threshold hit.
       await this.blockGloballyByDuration(1000 * 60 * 10)
     })
     this.handler.on('globalRateLimit', async (apiRequest, blockDurationMs) => {
+      await this.blockGloballyByDuration(blockDurationMs)
+    })
+    this.handler.on('cloudflareLimit', async (apiRequest, blockDurationMs) => {
       await this.blockGloballyByDuration(blockDurationMs)
     })
   }
@@ -109,9 +112,10 @@ class RESTConsumer {
     if (this.queueBlockTimer) {
       clearTimeout(this.queueBlockTimer)
     }
-    await this.queue.pause()
+    // The pause/resumes should be local since there should only ever be 1 consumer running
+    await this.queue.pause(true, true)
     this.queueBlockTimer = setTimeout(async () => {
-      await this.queue.resume()
+      await this.queue.resume(true)
       this.queueBlockTimer = null
     }, durationMs)
   }

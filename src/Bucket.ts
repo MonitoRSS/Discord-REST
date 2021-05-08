@@ -9,11 +9,13 @@ declare interface Bucket {
   emit(event: 'finishedAll'): boolean
   emit(event: 'rateLimit', apiRequest: APIRequest, blockedDurationMs: number): boolean
   emit(event: 'globalRateLimit', apiRequest: APIRequest, blockedDurationMs: number): boolean
+  emit(event: 'cloudflareLimit', apiRequest: APIRequest, blockedDurationMs: number): boolean
   emit(event: 'invalidRequest', apiRequest: APIRequest): boolean;
   on(event: 'recognizeURLBucket', listener: (url: string, bucketId: string) => void): this
   on(event: 'finishedAll', listener: () => void): this
   on(event: 'rateLimit', listener: (apiRequest: APIRequest, blockedDurationMs: number) => void): this
   on(event: 'globalRateLimit', listener: (apiRequest: APIRequest, blockedDurationMs: number) => void): this
+  on(event: 'cloudflareLimit', listener: (apiRequest: APIRequest, blockedDurationMs: number) => void): this
   on(event: 'invalidRequest', listener: (apiRequest: APIRequest) => void): this
 }
 
@@ -341,7 +343,7 @@ class Bucket extends EventEmitter {
    */
   private async handle429Response (apiRequest: APIRequest, res: Response): Promise<Response> {
     const { headers } = res
-    const blockedDurationMs = Bucket.getBlockedDuration(headers, true)
+    let blockedDurationMs = Bucket.getBlockedDuration(headers, true)
     this.debug(`429 hit for ${apiRequest.toString()}`)
     if (Bucket.isGloballyBlocked(headers)) {
       this.debug(`Global limit was hit after ${apiRequest.toString()}`)
@@ -350,7 +352,9 @@ class Bucket extends EventEmitter {
       this.emit('rateLimit', apiRequest, blockedDurationMs)
     }
     if (blockedDurationMs === -1) {
-      throw new Error('429 response with no blocked duration')
+      // Typically when the IP has been blocked by Cloudflare. Wait 3 hours if this happens.
+      blockedDurationMs = 1000 * 60 * 60 * 3
+      this.emit('cloudflareLimit', apiRequest, blockedDurationMs)
     }
     /**
      * 429 is considered an invalid request, and is counted towards
