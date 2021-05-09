@@ -54,7 +54,7 @@ declare interface RESTHandler {
   emit(event: 'invalidRequest', apiRequest: APIRequest, countSoFar: number): boolean
   emit(event: 'idle'|'active'): boolean
   emit(event: 'invalidRequestsThreshold', threshold: number): boolean
-  emit(event: 'cloudflareLimit', apiRequest: APIRequest, blockedDurationMs: number): boolean
+  emit(event: 'cloudflareRateLimit', apiRequest: APIRequest, blockedDurationMs: number): boolean
   /**
    * When a bucket rate limit is encountered
    */
@@ -77,7 +77,7 @@ declare interface RESTHandler {
    * When the IP has likely been banned for several hours after exceeding the maximum rate
    * limits allowed within a duration.
    */
-  on(event: 'cloudflareLimit', listener: (apiRequest: APIRequest, blockedDurationMs: number) => void): this;
+  on(event: 'cloudflareRateLimit', listener: (apiRequest: APIRequest, blockedDurationMs: number) => void): this;
 }
 
 /**
@@ -174,6 +174,9 @@ class RESTHandler extends EventEmitter {
     bucket.on('invalidRequest', (apiRequest: APIRequest) => {
       this.increaseInvalidRequestCount()
       this.emit('invalidRequest', apiRequest, this.invalidRequestsCount)
+    })
+    bucket.on('cloudflareRateLimit', (apiRequest: APIRequest, durationMs) => {
+      this.emit('cloudflareRateLimit', apiRequest, durationMs)
     })
   }
 

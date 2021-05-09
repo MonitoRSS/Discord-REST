@@ -75,7 +75,7 @@ class RESTConsumer {
     this.handler.on('globalRateLimit', async (apiRequest, blockDurationMs) => {
       await this.blockGloballyByDuration(blockDurationMs)
     })
-    this.handler.on('cloudflareLimit', async (apiRequest, blockDurationMs) => {
+    this.handler.on('cloudflareRateLimit', async (apiRequest, blockDurationMs) => {
       await this.blockGloballyByDuration(blockDurationMs)
     })
   }
