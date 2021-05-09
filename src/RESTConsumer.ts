@@ -57,7 +57,7 @@ class RESTConsumer {
         duration: 1000
       }
     })
-    this.queue.process(100, ({ data }: { data: JobData }) => {
+    this.queue.process(500, ({ data }: { data: JobData }) => {
       return this.handler.fetch(data.route, {
         ...data.options,
         headers: {
