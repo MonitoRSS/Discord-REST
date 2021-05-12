@@ -44,7 +44,7 @@ class RESTConsumer {
    */
   private authHeader: string;
 
-  constructor(redisUri: string, authHeader: string, options?: RESTHandlerOptions) {
+  constructor(redisUri: string, authHeader: string, options?: RESTHandlerOptions, concurrencyLimit?: number) {
     this.redisUri = redisUri
     this.authHeader = authHeader
     this.handler = new RESTHandler(options)
@@ -55,9 +55,11 @@ class RESTConsumer {
       limiter: {
         max: maxRequestsPerSecond,
         duration: 1000
-      }
+      },
     })
-    this.queue.process(500, ({ data }: { data: JobData }) => {
+    // Concurrency limit should not matter, so use an arbitrarily high number
+    // We accept an arugment for now though for testing
+    this.queue.process(concurrencyLimit || 1000, ({ data }: { data: JobData }) => {
       return this.handler.fetch(data.route, {
         ...data.options,
         headers: {
