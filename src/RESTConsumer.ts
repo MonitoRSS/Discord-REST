@@ -118,9 +118,9 @@ class RESTConsumer {
       clearTimeout(this.queueBlockTimer)
     }
     // The pause/resumes should be local since there should only ever be 1 consumer running
-    await this.queue.pause(true, forceAllJobsToStop)
+    await this.queue.pause(false, forceAllJobsToStop)
     this.queueBlockTimer = setTimeout(async () => {
-      await this.queue.resume(true)
+      await this.queue.resume(false)
       this.queueBlockTimer = null
     }, durationMs)
   }
