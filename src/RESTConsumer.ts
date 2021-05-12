@@ -56,6 +56,9 @@ class RESTConsumer {
         max: maxRequestsPerSecond,
         duration: 1000
       },
+      settings: {
+        maxStalledCount: 5,
+      }
     })
     // Concurrency limit should not matter, so use an arbitrarily high number
     // We accept an arugment for now though for testing
@@ -78,7 +81,7 @@ class RESTConsumer {
       await this.blockGloballyByDuration(blockDurationMs)
     })
     this.handler.on('cloudflareRateLimit', async (apiRequest, blockDurationMs) => {
-      await this.blockGloballyByDuration(blockDurationMs)
+      await this.blockGloballyByDuration(blockDurationMs, true)
     })
   }
 
@@ -109,13 +112,13 @@ class RESTConsumer {
    * If there's already a timer, the previous timer is cleared
    * and is recreated
    */
-  private async blockGloballyByDuration (durationMs: number) {
+  private async blockGloballyByDuration (durationMs: number, forceAllJobsToStop?: boolean) {
     this.handler.blockBucketsByDuration(durationMs)
     if (this.queueBlockTimer) {
       clearTimeout(this.queueBlockTimer)
     }
     // The pause/resumes should be local since there should only ever be 1 consumer running
-    await this.queue.pause(true, true)
+    await this.queue.pause(true, forceAllJobsToStop)
     this.queueBlockTimer = setTimeout(async () => {
       await this.queue.resume(true)
       this.queueBlockTimer = null
