@@ -36,7 +36,7 @@ class RESTProducer {
       meta
     }
     const job = await this.queue.add(jobData, {
-      removeOnComplete: true,
+      removeOnComplete: 1000,
       removeOnFail: true,
       // Job failures should only happen when requests get stalled, or when requests timeout
       attempts: 3,
@@ -54,16 +54,7 @@ class RESTProducer {
    */
   public async fetch<JSONResponse>(route: string, options: RequestInit = {}, meta?: Record<string, unknown>): Promise<JobResponse<JSONResponse>> {
     const job = await this.enqueue(route, options, meta)
-    return new Promise((resolve) => {
-      const jobCompleteFn = (jobId: string, result: JobResponse<JSONResponse>) => {
-        if (jobId !== job.id) {
-          return
-        }
-        resolve(result)
-        this.queue.removeListener('global:completed', jobCompleteFn)
-      }
-      this.queue.on('global:completed', jobCompleteFn)
-    })
+    return job.finished();
   }
 }
 
