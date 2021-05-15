@@ -30,6 +30,9 @@ class RESTProducer {
    * @returns The enqueued job
    */
   public async enqueue(route: string, options: RequestInit = {}, meta?: Record<string, unknown>): Promise<Job> {
+    if (!route) {
+      throw new Error(`Missing route for RESTProducer enqueue`)
+    }
     const jobData: JobData = {
       route,
       options,
