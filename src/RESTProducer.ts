@@ -56,7 +56,6 @@ class RESTProducer {
     const job = await this.enqueue(route, options, meta)
     return new Promise((resolve) => {
       const jobCompleteFn = (jobId: string, result: JobResponse<JSONResponse>) => {
-        console.log('job completed')
         if (jobId !== job.id) {
           return
         }
