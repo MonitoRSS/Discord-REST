@@ -54,7 +54,17 @@ class RESTProducer {
    */
   public async fetch<JSONResponse>(route: string, options: RequestInit = {}, meta?: Record<string, unknown>): Promise<JobResponse<JSONResponse>> {
     const job = await this.enqueue(route, options, meta)
-    return job.finished();
+    return new Promise((resolve) => {
+      const jobCompleteFn = (jobId: string, result: JobResponse<JSONResponse>) => {
+        console.log('job completed')
+        if (jobId !== job.id) {
+          return
+        }
+        resolve(result)
+        this.queue.removeListener('global:completed', jobCompleteFn)
+      }
+      this.queue.on('global:completed', jobCompleteFn)
+    })
   }
 }
 
