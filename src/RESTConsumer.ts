@@ -83,6 +83,7 @@ class RESTConsumer {
     this.handler.on('cloudflareRateLimit', async (apiRequest, blockDurationMs) => {
       await this.blockGloballyByDuration(blockDurationMs, true)
     })
+    this.queue.resume(false)
   }
 
   private async handleJobFetchResponse(res: Response) {
