@@ -40,6 +40,6 @@
     "bull-board": "^1.7.2",
     "debug": "^4.3.1",
     "express": "^4.17.1",
-    "node-fetch": "^2.6.1"
+    "node-fetch": "^2.6.7"
   }
 }
