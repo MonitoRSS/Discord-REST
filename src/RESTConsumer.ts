@@ -1,6 +1,7 @@
 import RESTHandler, { RESTHandlerOptions } from "./RESTHandler";
 import Queue from 'bull'
-import { RequestInit, Response } from "node-fetch";
+import { Body, RequestInit, Response } from "node-fetch";
+import { EventEmitter } from "events";
 
 export type JobData = {
   route: string
@@ -21,7 +22,7 @@ export const REDIS_QUEUE_NAME = 'discord-rest'
  * 
  * For sending API requests to the consumer, the RESTProducer should be used instead.
  */
-class RESTConsumer {
+class RESTConsumer extends EventEmitter {
   /**
    * The Redis URI for the queue handler.
    */
@@ -45,6 +46,7 @@ class RESTConsumer {
   private authHeader: string;
 
   constructor(redisUri: string, authHeader: string, options?: RESTHandlerOptions, concurrencyLimit?: number) {
+    super()
     this.redisUri = redisUri
     this.authHeader = authHeader
     this.handler = new RESTHandler(options)
@@ -63,15 +65,34 @@ class RESTConsumer {
     // Concurrency limit should not matter, so use an arbitrarily high number
     // We accept an arugment for now though for testing
     this.queue.process(concurrencyLimit || 1000, ({ data }: { data: JobData }) => {
-      return this.handler.fetch(data.route, {
-        ...data.options,
-        headers: {
-          Authorization: this.authHeader,
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          ...data.options.headers,
+      // eslint-disable-next-line no-async-promise-executor
+      return new Promise<{status: number, body: any}>(async (resolve, reject) => {
+        try {
+          // Timeout after 5 minutes
+          const timeout = setTimeout(() => {
+            this.emit('timeout', data)
+            reject(new Error('Timed Out'))
+          }, 1000 * 60 * 5)
+
+          const res = await this.handler.fetch(data.route, {
+            ...data.options,
+            headers: {
+              Authorization: this.authHeader,
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              ...data.options.headers,
+            }
+          })
+
+          const parsedData = await this.handleJobFetchResponse(res)
+
+          clearTimeout(timeout)
+
+          resolve(parsedData)
+        } catch (err) {
+          reject(err)
         }
-      }).then(this.handleJobFetchResponse)
+      })
     })
     this.handler.on('invalidRequestsThreshold', async () => {
       // Block everything for 10 min - a value given by Discord after a global limit threshold hit.
