@@ -41,8 +41,6 @@ class RESTProducer {
     const job = await this.queue.add(jobData, {
       removeOnComplete: 1000,
       removeOnFail: true,
-      // Job failures should only happen when requests get stalled, or when requests timeout
-      attempts: 3,
     })
     return job
   }
