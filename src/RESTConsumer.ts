@@ -54,6 +54,11 @@ class RESTConsumer extends EventEmitter {
     // https://discord.com/developers/docs/topics/rate-limits#global-rate-limit
     const maxRequestsPerSecond = options?.maxRequestsPerSecond || 50
     this.queue = new Queue(options?.queueName || REDIS_QUEUE_NAME, this.redisUri, {
+      redis: {
+        tls: {
+          rejectUnauthorized: false,
+        }
+      },
       limiter: {
         max: maxRequestsPerSecond,
         duration: 1000
