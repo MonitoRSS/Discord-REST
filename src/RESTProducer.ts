@@ -41,6 +41,7 @@ class RESTProducer {
     const job = await this.queue.add(jobData, {
       removeOnComplete: 1000,
       removeOnFail: true,
+      attempts: 3,
     })
     return job
   }
