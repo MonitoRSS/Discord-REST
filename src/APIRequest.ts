@@ -60,25 +60,16 @@ class APIRequest {
    * Execute the request with a timeout
    */
   async execute (): Promise<Response> {
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), this.timeout)
+    // const timeout = setTimeout(() => controller.abort(), this.timeout)
     try {
       const res = await fetch(this.route, {
         ...this.options,
-        signal: controller.signal
       })
       this.fetchSuccess = true
       return res
     } catch (err) {
-      if (err.type === 'aborted' && this.attempted++ < this.maxAttempts) {
-        // If the request timed out, retry it
-        return this.execute()
-      } else {
-        this.fetchSuccess = false
-        throw err
-      }
-    } finally {
-      clearTimeout(timeout)
+      this.fetchSuccess = false
+      throw err
     }
   }
 
