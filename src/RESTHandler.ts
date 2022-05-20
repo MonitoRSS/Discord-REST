@@ -2,6 +2,8 @@ import Bucket from "./Bucket"
 import { RequestInit, Response } from "node-fetch";
 import APIRequest from "./APIRequest";
 import { EventEmitter } from "events";
+import PQueue, { DefaultAddOptions, Options } from 'p-queue'
+import PriorityQueue from "p-queue/dist/priority-queue";
 
 export type RESTHandlerOptions = {
   /**
@@ -46,6 +48,11 @@ export type RESTHandlerOptions = {
    * Name of the queue to be stored in Redis
    */
   queueName?: string
+  /**
+   * Options for PQueue that holds enqueues all requests
+   * See https://github.com/sindresorhus/p-queue
+   */
+   pqueueOptions?: Options<PriorityQueue, DefaultAddOptions>
 }
 
 declare interface RESTHandler {
@@ -129,6 +136,17 @@ class RESTHandler extends EventEmitter {
    * a global rate limit is hit
    */
   private readonly globalBlockDurationMultiple: number
+  /**
+   * Stores all API requests to be executed at a maximum
+   * rate of 14 requests per second
+   */
+  private readonly queue: PQueue;
+  /**
+   * Options for PQueue that holds enqueues all requests
+   * See https://github.com/sindresorhus/p-queue
+   */
+  pqueueOptions?: Options<PriorityQueue, DefaultAddOptions>
+  private queueBlockTimer: NodeJS.Timer|null = null;
   private readonly userOptions: RESTHandlerOptions
 
   constructor (options?: RESTHandlerOptions) {
@@ -136,6 +154,14 @@ class RESTHandler extends EventEmitter {
     this.userOptions = options || {}
     this.invalidRequestsThreshold = options?.invalidRequestsThreshold || 5000
     this.globalBlockDurationMultiple = options?.globalBlockDurationMultiple || 1
+
+    this.queue = new PQueue({
+      // 30/sec as a safe default
+      interval: 1000,
+      intervalCap: 30,
+      ...options?.pqueueOptions
+    })
+
     if (options?.delayOnInvalidThreshold !== false) {
       /**
        * Reset the invalid requests count every 10 minutes
@@ -156,6 +182,7 @@ class RESTHandler extends EventEmitter {
     ++this.invalidRequestsCount
     if (this.invalidRequestsCount === this.invalidRequestsThreshold) {
       // Block all buckets from executing requests for 10 min
+      this.blockGloballyByDuration(1000 * 60 * 10)
       this.emit('invalidRequestsThreshold', this.invalidRequestsCount)
     }
   }
@@ -166,7 +193,9 @@ class RESTHandler extends EventEmitter {
   private registerBucketListener (bucket: Bucket) {
     bucket.on('recognizeURLBucket', this.recognizeURLBucket.bind(this))
     bucket.on('globalRateLimit', (apiRequest, durationMs) => {
-      this.emit('globalRateLimit', apiRequest, durationMs * this.globalBlockDurationMultiple)
+      const blockDuration = durationMs * this.globalBlockDurationMultiple
+      this.blockGloballyByDuration(blockDuration)
+      this.emit('globalRateLimit', apiRequest, blockDuration)
     })
     bucket.on('rateLimit', (apiRequest: APIRequest, durationMs: number) => {
       this.emit('rateLimit', apiRequest, durationMs)
@@ -232,6 +261,23 @@ class RESTHandler extends EventEmitter {
       this.bucketsByUrl.set(route, bucket as Bucket)
     }
   }
+
+  /**
+   * Blocks all queued API requests and buckets for a duration
+   * If there's already a timer, the previous timer is cleared
+   * and is recreated
+   */
+     private blockGloballyByDuration (durationMs: number) {
+      this.blockBucketsByDuration(durationMs)
+      if (this.queueBlockTimer) {
+        clearTimeout(this.queueBlockTimer)
+      }
+      this.queue.pause()
+      this.queueBlockTimer = setTimeout(() => {
+        this.queue.start()
+        this.queueBlockTimer = null
+      }, durationMs)
+    }
 
   /**
    * Block all buckets from running, or override buckets'
@@ -307,7 +353,7 @@ class RESTHandler extends EventEmitter {
     })
     const url = apiRequest.route
     const bucket = this.getBucketForUrl(url)
-    const result = await bucket.enqueue(apiRequest)
+    const result = await this.queue.add(() => bucket.enqueue(apiRequest))
     return result
   }
 }
