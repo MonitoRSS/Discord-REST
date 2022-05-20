@@ -205,7 +205,9 @@ class RESTHandler extends EventEmitter {
       this.emit('invalidRequest', apiRequest, this.invalidRequestsCount)
     })
     bucket.on('cloudflareRateLimit', (apiRequest: APIRequest, durationMs) => {
-      this.emit('cloudflareRateLimit', apiRequest, durationMs)
+      const blockDuration = durationMs * this.globalBlockDurationMultiple
+      this.blockGloballyByDuration(blockDuration)
+      this.emit('cloudflareRateLimit', apiRequest, blockDuration)
     })
   }
 
