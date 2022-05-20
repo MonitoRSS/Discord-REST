@@ -1,23 +1,51 @@
-import Queue, { Job } from "bull"
+import { AMQPChannel, AMQPClient, AMQPQueue } from "@cloudamqp/amqp-client"
+import { AMQPBaseClient } from "@cloudamqp/amqp-client/types/amqp-base-client"
 import { RequestInit } from "node-fetch"
-import { JobData, JobResponse, REDIS_QUEUE_NAME } from './RESTConsumer'
-import { RESTHandlerOptions } from "./RESTHandler"
+import { JobData, JobResponse } from './RESTConsumer'
+import { nanoid } from 'nanoid'
+
+interface Options {
+  clientId: string;
+}
+
+interface RequestOptions extends RequestInit {
+  rpc?: boolean
+}
 
 class RESTProducer {
-  private redisUri: string
-  private queue: Queue.Queue
+  private rabbitmq: {
+    connection: AMQPBaseClient,
+    channel: AMQPChannel,
+    queue: AMQPQueue
+  } | null = null;
 
-  constructor(redisUri: string, options?: Pick<RESTHandlerOptions, 'queueName'>) {
-    this.redisUri = redisUri
-    this.queue = new Queue(options?.queueName || REDIS_QUEUE_NAME, this.redisUri)
-    /**
-     * Set the relevant listeners to infinite max listeners to prevent this.fetch calls
-     * creating event emitter warnings since it creates even emitters every time we need to wait
-     * for a job to complete.
-     */
-    this.queue.setMaxListeners(0)
-    // @ts-ignore
-    this.queue.eclient.setMaxListeners(0)
+  constructor(
+    private readonly rabbitmqUri: string,
+    private readonly options: Options
+  ) {}
+
+  public async initialize(): Promise<void> {
+    const amqpClient = new AMQPClient(this.rabbitmqUri)
+    const connection = await amqpClient.connect()
+    const channel = await connection.channel()
+    const queue = await channel.queue(`discord-messages-${this.options.clientId}`, {
+      durable: true,
+    }, {
+      'x-single-active-consumer': true,
+      'x-max-priority': 255,
+      'x-queue-mode': 'lazy',
+      'x-message-ttl': 1000 * 60 * 60 * 24 // 1 day
+    })
+
+    this.rabbitmq = {
+      channel,
+      connection,
+      queue,
+    }
+  }
+
+  public async close(): Promise<void> {
+    await this.rabbitmq?.connection.close()
   }
 
   /**
@@ -29,21 +57,26 @@ class RESTProducer {
    * @param meta Metadata to attach to the job for the Consumer to access
    * @returns The enqueued job
    */
-  public async enqueue(route: string, options: RequestInit = {}, meta?: Record<string, unknown>): Promise<Job> {
+  public async enqueue(route: string, options: RequestOptions = {}, meta?: Record<string, unknown>): Promise<void> {
     if (!route) {
       throw new Error(`Missing route for RESTProducer enqueue`)
     }
+
+    if (!this.rabbitmq) {
+      throw new Error(`RESTProducer must be initialized with initialize() before enqueue`)
+    }
+
     const jobData: JobData = {
+      id: nanoid(),
       route,
       options,
-      meta
+      meta,
+      rpc: false,
     }
-    const job = await this.queue.add(jobData, {
-      removeOnComplete: 1000,
-      removeOnFail: true,
-      attempts: 3,
+
+    await this.rabbitmq.queue.publish(JSON.stringify(jobData), {
+      deliveryMode: 2,
     })
-    return job
   }
 
   /**
@@ -55,8 +88,56 @@ class RESTProducer {
    * @returns Fetch response details
    */
   public async fetch<JSONResponse>(route: string, options: RequestInit = {}, meta?: Record<string, unknown>): Promise<JobResponse<JSONResponse>> {
-    const job = await this.enqueue(route, options, meta)
-    return job.finished();
+    if (!route) {
+      throw new Error(`Missing route for RESTProducer enqueue`)
+    }
+
+    if (!this.rabbitmq) {
+      throw new Error(`RESTProducer must be initialized with initialize() before enqueue`)
+    }
+
+    const jobData: JobData = {
+      id: nanoid(),
+      route,
+      options,
+      meta,
+      rpc: true,
+    }
+
+    const replyQueue = await this.rabbitmq.channel.queue(`discord-messages-callback-${jobData.id}`, {
+      autoDelete: true,
+    }, {
+      'x-expires': 1000 * 60 * 5 // 5 minutes
+    })
+  
+    const response = new Promise<JobResponse<JSONResponse>>(async (resolve, reject) => {
+      try {
+        const consumer = await replyQueue.subscribe({ noAck: true }, async (message) => {
+          if (message.properties.correlationId !== jobData.id) {
+            return
+          }
+
+          try {
+            const parsedJson = JSON.parse(message.bodyToString() || '')
+            resolve(parsedJson)
+          } catch (err) {
+            throw new Error('Failed to parse JSON from RPC response')
+          } finally {
+            await consumer.cancel()
+          }
+        })
+      } catch (err) {
+        reject(err)
+      }
+    })
+
+    await this.rabbitmq.queue.publish(JSON.stringify(jobData), {
+      deliveryMode: 2,
+      replyTo: replyQueue.name,
+      correlationId: jobData.id,
+    })
+
+    return response
   }
 }
 

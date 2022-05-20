@@ -1,0 +1,34 @@
+version: "3.8"
+services:
+  # Feed-fetcher
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    ports:
+      - 5672:5672
+      - 15672:15672
+    logging:
+      driver: none
+    volumes:
+      - ~/.docker-conf/rabbitmq/data/:/var/lib/rabbitmq/
+      - ~/.docker-conf/rabbitmq/log/:/var/log/rabbitmq
+  tests:
+    working_dir: /usr/src/app
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: build
+    command: npm run test-e2e
+    stdin_open: true
+    tty: true
+    # volumes:
+    #   - .:/usr/src/app
+    #   - /usr/src/app/node_modules/
+    volumes:
+      - type: bind
+        source: .
+        target: /usr/src/app
+      - /usr/src/app/node_modules/
+    depends_on:
+      - rabbitmq
+    environment:
+      - RABBITMQ_URI=amqp://rabbitmq:5672

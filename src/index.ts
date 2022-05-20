@@ -4,7 +4,6 @@ import RESTProducer from './RESTProducer'
 import RESTConsumer, {
   JobData,
   JobResponse,
-  REDIS_QUEUE_NAME
 } from './RESTConsumer'
 
 export {
@@ -14,5 +13,4 @@ export {
   RESTConsumer,
   JobData,
   JobResponse,
-  REDIS_QUEUE_NAME
 }
