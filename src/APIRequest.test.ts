@@ -1,19 +1,16 @@
-import fetch, { Response } from 'node-fetch'
-import { mocked } from 'ts-jest/utils'
 import APIRequest from './APIRequest'
+import nock from 'nock'
 
-jest.mock('node-fetch')
-
-const fetchMocked = mocked(fetch)
 
 describe('APIRequest', () => {
+  const dummyUrl = 'https://example.com'
+
   beforeEach(() => {
-    jest.useFakeTimers()
+    nock.cleanAll()
   })
   afterEach(() => {
     APIRequest.lastId = 0
     jest.resetAllMocks()
-    fetchMocked.mockReset()
   })
   describe('constructor', () => {
     it('auto-increments the id', async () => {
@@ -31,17 +28,64 @@ describe('APIRequest', () => {
       const response = {
         foo: 'bar'
       } as unknown as Response
-      fetchMocked.mockResolvedValue(response)
-      const apiRequest = new APIRequest('route')
+      
+      nock(dummyUrl)
+        .get('/')
+        .reply(200, response)
+
+      const apiRequest = new APIRequest(dummyUrl)
       const result = await apiRequest.execute()
-      expect(result).toEqual(response)
+      await expect(result.json()).resolves.toEqual(response)
     })
+
     it('throws the same error that fetch throws', async () => {
       const fetchError = new Error('fetch error example')
-      fetchMocked.mockRejectedValue(fetchError)
-      const apiRequest = new APIRequest('route')
+
+      nock(dummyUrl)
+        .get('/')
+        .replyWithError(fetchError)
+
+      const apiRequest = new APIRequest(dummyUrl)
       await expect(apiRequest.execute())
-        .rejects.toThrow(fetchError)
+        .rejects.toThrow()
+    })
+
+    it('retries 3 times on 422 code', async () => {
+      const nockScope = nock(dummyUrl)
+        .get('/')
+        .reply(422, {})
+        .get('/')
+        .reply(422, {})
+        .get('/')
+        .reply(422, {})
+        .get('/')
+        .reply(422, {})
+
+      const apiRequest = new APIRequest(dummyUrl)
+      await apiRequest.execute({
+        baseAttemptDelay: 1
+      })
+
+      expect(nockScope.isDone()).toBe(true)
+    })
+
+    it('retries 3 times on >= 500 codes', async () => {
+      const nockScope = nock(dummyUrl)
+        .get('/')
+        .reply(500, {})
+        .get('/')
+        .reply(502, {})
+        .get('/')
+        .reply(501, {})
+        .get('/')
+        .reply(500, {})
+
+      const apiRequest = new APIRequest(dummyUrl)
+      await apiRequest.execute({
+        baseAttemptDelay: 1
+      })
+
+      expect(nockScope.isDone()).toBe(true)
     })
   })
   describe('toString', () => {
@@ -52,3 +96,4 @@ describe('APIRequest', () => {
     })
   })
 })
+ 

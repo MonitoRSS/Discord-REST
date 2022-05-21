@@ -1,4 +1,3 @@
-import { Response } from "node-fetch"
 import APIRequest from "./APIRequest"
 import Bucket from "./Bucket"
 import RESTHandler from "./RESTHandler"

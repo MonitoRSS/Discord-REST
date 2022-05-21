@@ -1,5 +1,4 @@
 import Bucket from "./Bucket"
-import { RequestInit, Response } from "node-fetch";
 import APIRequest from "./APIRequest";
 import { EventEmitter } from "events";
 import PQueue, { DefaultAddOptions, Options } from 'p-queue'
