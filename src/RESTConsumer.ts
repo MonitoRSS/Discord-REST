@@ -2,7 +2,7 @@ import RESTHandler, { RESTHandlerOptions } from "./RESTHandler";
 import { Response } from "node-fetch";
 import { EventEmitter } from "events";
 import { AMQPChannel, AMQPClient, AMQPConsumer, AMQPMessage } from "@cloudamqp/amqp-client";
-import { MessageParseError, MessageProcessingError } from "./errors";
+import { MessageParseError, MessageProcessingError, RequestTimeoutError } from "./errors";
 import { AMQPBaseClient } from "@cloudamqp/amqp-client/types/amqp-base-client";
 import * as yup from 'yup'
 
@@ -15,6 +15,11 @@ interface ConsumerOptions {
    * The Discord bot's ID.
    */
   clientId: string;
+  /**
+   * Automatically delete all queues after all messages has been consumed. This is for
+   * integration testing.
+   */
+  autoDeleteQueues?: boolean
 }
 
 interface RequestOptions extends RequestInit {
@@ -34,8 +39,14 @@ const jobDataSchema = yup.object().required().shape({
 export type JobData = yup.InferType<typeof jobDataSchema>
 
 export type JobResponse<DiscordResponse> = {
+  state: 'success',
   status: number,
   body: DiscordResponse
+}
+
+export interface JobResponseError {
+  state: 'error'
+  message: string
 }
 
 /**
@@ -74,6 +85,7 @@ class RESTConsumer extends EventEmitter {
     const channel = await connection.channel()
     const queue = await channel.queue(`discord-messages-${this.consumerOptions.clientId}`, {
       durable: true,
+      autoDelete: this.consumerOptions.autoDeleteQueues
     }, {
       'x-single-active-consumer': true,
       'x-max-priority': 255,
@@ -82,35 +94,52 @@ class RESTConsumer extends EventEmitter {
     })
 
     const consumer = await queue.subscribe({ noAck: false }, async (message) => {
+      let data: JobData;
+        
       try {
-        let data: JobData;
-        
-        try {
-          data = await this.validateMessage(message)
-        } catch (err) {
-          this.emit('error', new MessageParseError((err as Error).message))
-
-          return;
-        }
-
-        const response = await this.processJobData(data);
-        
-        if (data.rpc) {
-          const callbackQueue = await channel.queue(message.properties.replyTo, {
-            autoDelete: true,
-          }, {
-            'x-expires': 1000 * 60 * 5 // 5 minutes
-          })
-
-          await callbackQueue.publish(JSON.stringify(response), {
-            correlationId: message.properties.correlationId,
-          })
-        }
+        data = await this.validateMessage(message)
       } catch (err) {
-        this.emit('error', new MessageProcessingError((err as Error).message).message)        
-      } finally {
+        this.emit('err', new MessageParseError((err as Error).message))
         await message.ack()
+
+        return;
       }
+  
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let response: JobResponseError | JobResponse<any>;
+      
+      try {
+        response = {
+          ...await this.processJobData(data),
+          state: 'success',
+        }
+        
+      } catch (err) {
+        const message = (err as Error).message
+        response = {
+          state: 'error',
+          message
+        }
+        if (err instanceof RequestTimeoutError) {
+          this.emit('err', err, data)
+        } else {
+          this.emit('err', new MessageProcessingError(message), data)
+        }
+      }
+
+      if (data.rpc) {
+        const callbackQueue = await channel.queue(message.properties.replyTo, {
+          autoDelete: true,
+        }, {
+          'x-expires': 1000 * 60 * 5 // 5 minutes
+        })
+
+        await callbackQueue.publish(JSON.stringify(response), {
+          correlationId: message.properties.correlationId,
+        })
+      }
+
+      await message.ack()
     })
 
     this.rabbitmq = {
@@ -139,11 +168,10 @@ class RESTConsumer extends EventEmitter {
 
     return new Promise<{status: number, body: Record<string, never>}>(async (resolve, reject) => {
       try {
-        // Timeout after 5 minutes
+        // Timeout after 4 minutes
         const timeout = setTimeout(() => {
-          this.emit('timeout', data)
-          reject(new Error('Timed Out'))
-        }, 1000 * 60 * 5)
+          reject(new RequestTimeoutError())
+        }, 1000 * 60 * 4)
 
         const res = await handler.fetch(data.route, {
           ...data.options,
@@ -167,10 +195,6 @@ class RESTConsumer extends EventEmitter {
   }
 
   private async handleJobFetchResponse(res: Response) {
-    if (res.status.toString().startsWith('5')) {
-      throw new Error(`Bad status code (${res.status})`)
-    }
-
     // A custom object be returned here to provide a serializable object to store
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let body: any

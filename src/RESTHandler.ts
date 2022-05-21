@@ -162,7 +162,7 @@ class RESTHandler extends EventEmitter {
       ...options?.pqueueOptions
     })
 
-    if (options?.delayOnInvalidThreshold !== false) {
+    if (options?.delayOnInvalidThreshold !== false && process.env.NODE_ENV !== 'test') {
       /**
        * Reset the invalid requests count every 10 minutes
        * since that is the duration specified by Discord.

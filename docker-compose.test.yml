@@ -20,13 +20,8 @@ services:
     command: npm run test-e2e
     stdin_open: true
     tty: true
-    # volumes:
-    #   - .:/usr/src/app
-    #   - /usr/src/app/node_modules/
     volumes:
-      - type: bind
-        source: .
-        target: /usr/src/app
+      - .:/usr/src/app
       - /usr/src/app/node_modules/
     depends_on:
       - rabbitmq

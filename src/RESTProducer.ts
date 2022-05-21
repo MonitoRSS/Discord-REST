@@ -1,11 +1,16 @@
 import { AMQPChannel, AMQPClient, AMQPQueue } from "@cloudamqp/amqp-client"
 import { AMQPBaseClient } from "@cloudamqp/amqp-client/types/amqp-base-client"
 import { RequestInit } from "node-fetch"
-import { JobData, JobResponse } from './RESTConsumer'
+import { JobData, JobResponse, JobResponseError } from './RESTConsumer'
 import { nanoid } from 'nanoid'
 
 interface Options {
   clientId: string;
+  /**
+   * Automatically delete all queues after all messages has been consumed. This is for
+   * integration testing.
+   */
+  autoDeleteQueues?: boolean
 }
 
 interface RequestOptions extends RequestInit {
@@ -30,6 +35,7 @@ class RESTProducer {
     const channel = await connection.channel()
     const queue = await channel.queue(`discord-messages-${this.options.clientId}`, {
       durable: true,
+      autoDelete: this.options.autoDeleteQueues,
     }, {
       'x-single-active-consumer': true,
       'x-max-priority': 255,
@@ -87,7 +93,11 @@ class RESTProducer {
    * @param meta Metadata to attach to the job for the Consumer to access
    * @returns Fetch response details
    */
-  public async fetch<JSONResponse>(route: string, options: RequestInit = {}, meta?: Record<string, unknown>): Promise<JobResponse<JSONResponse>> {
+  public async fetch<JSONResponse>(
+    route: string,
+    options: RequestInit = {},
+    meta?: Record<string, unknown>
+  ): Promise<JobResponse<JSONResponse> | JobResponseError> {
     if (!route) {
       throw new Error(`Missing route for RESTProducer enqueue`)
     }
