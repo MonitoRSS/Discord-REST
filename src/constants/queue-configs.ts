@@ -1,7 +1,11 @@
 import amqp from 'amqplib'
 
 export const getQueueName = (clientId: string): string => {
-  return `discord-${clientId}`
+  if (process.env.NODE_ENV === 'test') {
+    return `test:discord-api-${clientId}`
+  }
+  
+  return `discord-api-${clientId}`
 }
 
 export const getQueueConfig = (options?: {
