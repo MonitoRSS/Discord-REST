@@ -20,11 +20,6 @@ export type RESTHandlerOptions = {
    */
   delayOnInvalidThreshold?: boolean,
   /**
-   * Milliseconds to wait for an API request before automatically
-   * timing it out
-   */
-  requestTimeout?: number,
-  /**
    * Number of request retries on API request timeouts
    */
   requestTimeoutRetries?: number,
@@ -347,10 +342,9 @@ class RESTHandler extends EventEmitter {
    * @returns node-fetch response
    */
   public async fetch (route: string, options: RequestInit): Promise<Response> {
-    const { requestTimeout, requestTimeoutRetries } = this.userOptions
+    const { requestTimeoutRetries } = this.userOptions
     const apiRequest = new APIRequest(route, options, {
-      timeout: requestTimeout,
-      maxAttempts: requestTimeoutRetries,
+      maxRetries: requestTimeoutRetries,
     })
     const url = apiRequest.route
     const bucket = this.getBucketForUrl(url)

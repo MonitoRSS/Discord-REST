@@ -5,13 +5,9 @@ const fetchWithRetry = fetchRetry(fetch);
 
 type RequestOptions = {
   /**
-   * The time until this request will timeout
+   * Maximum number of retries before rejecting
    */
-  timeout?: number,
-  /**
-   * Maximum number of failed attempts before rejecting
-   */
-  maxAttempts?: number
+  maxRetries?: number
 }
 
 class APIRequest {
@@ -38,7 +34,7 @@ class APIRequest {
   private fetchSuccess: boolean|undefined = undefined
 
 
-  constructor (route: string, fetchOptions?: RequestInit) {
+  constructor (route: string, fetchOptions?: RequestInit, requestOptions?: RequestOptions) {
     this.route = route
     this.options = fetchOptions
     this.id = ++APIRequest.lastId

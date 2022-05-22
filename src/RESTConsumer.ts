@@ -1,5 +1,4 @@
 import RESTHandler, { RESTHandlerOptions } from "./RESTHandler";
-import { Response } from "node-fetch";
 import { EventEmitter } from "events";
 import { AMQPChannel, AMQPClient, AMQPConsumer, AMQPMessage } from "@cloudamqp/amqp-client";
 import { MessageParseError, MessageProcessingError, RequestTimeoutError } from "./errors";
@@ -194,7 +193,7 @@ class RESTConsumer extends EventEmitter {
     })
   }
 
-  private async handleJobFetchResponse(res: Response) {
+  private async handleJobFetchResponse(res: globalThis.Response) {
     // A custom object be returned here to provide a serializable object to store
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let body: any

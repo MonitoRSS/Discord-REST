@@ -1,6 +1,5 @@
 import { AMQPChannel, AMQPClient, AMQPQueue } from "@cloudamqp/amqp-client"
 import { AMQPBaseClient } from "@cloudamqp/amqp-client/types/amqp-base-client"
-import { RequestInit } from "node-fetch"
 import { JobData, JobResponse, JobResponseError } from './RESTConsumer'
 import { nanoid } from 'nanoid'
 
