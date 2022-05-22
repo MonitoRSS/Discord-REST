@@ -1,18 +1,19 @@
 # Discord-REST
 
-A distributed Discord rate limit handler that uses [node-fetch](https://github.com/node-fetch/node-fetch)'s interface for easy use.
+A distributed Discord rate limit handler that uses [isomorphic-fetch](https://github.com/matthew-andrews/isomorphic-fetch)'s interface for easy use.
 
-Requesta are enqueued into Redis using a producer, and is consumed from Redis by a consumer. All requests are executed FIFO.
+Requesta are enqueued into RabbitMQ using a producer, and is consumed by a consumer.
 
-By default, outgoing requests are throttled at a maximum of 50/second ([the maximum allowed by Discord](https://discord.com/developers/docs/topics/rate-limits#global-rate-limit)).
+By default, outgoing requests are throttled at a maximum of 30/second (lower than the [the maximum allowed by Discord](https://discord.com/developers/docs/topics/rate-limits#global-rate-limit), which is 50, to give some buffer for other requests).
 
 ### Table of Contents
 
-- [Install](#install)
-- [Usage](#usage)
-  - [Custom Options](#custom-options)
-- [Handle Invalid Requests](#handle-invalid-requests)
-- [Debugging](#debugging)
+- [Discord-REST](#discord-rest)
+    - [Table of Contents](#table-of-contents)
+  - [Install](#install)
+  - [Usage](#usage)
+  - [Handle Invalid Requests](#handle-invalid-requests)
+  - [Debugging](#debugging)
 
 ## Install
 
@@ -24,125 +25,76 @@ npm i @synzen/discord-rest
 
 1. Set up a `RESTConsumer` to get ready to consume incoming requests.
 
-   ```ts
-   import { RESTConsumer } from "@synzen/discord-rest";
+    ```ts
+    import { RESTConsumer } from "@synzen/discord-rest";
 
-   const consumer = new RESTConsumer(redisUri, `Bot ${botToken}`);
-   // You can use the consumer to listen to important events. See #handle-invalid-requests section
-   ```
+    const consumer = new RESTConsumer(rabbitmqUri, {
+      authHeader: `Bot ${botToken}`,
+      clientId: 'Bot client id'
+    });
+
+    consumer.initialize()
+    .then(() => console.log('Initialized'))
+    .catch(console.error)
+
+    // You can use the consumer to also listen to important events. See #handle-invalid-requests section
+    ```
 
 2. Set up a `RESTProducer` to send out API requests. Only requests that expect `Content-Type: application/json` is currently supported for simplicity and for it to be serializable to be stored within Redis.
 
-   ```ts
-   import { RESTConsumer } from "@synzen/discord-rest";
+    ```ts
+    import { RESTConsumer } from "@synzen/discord-rest";
 
-   const producer = new RESTProducer(redisUri);
+    const producer = new RESTProducer(rabbitmqUri, {
+    clientId: 'Bot client id'
+    });
 
-   producer
-     .enqueue(
-       discordEndpoint,
-       {
-         // node-fetch options.
-         method: "POST",
-         body: JSON.stringify(payload),
-       },
-       {
-         // Any meta info you'd like to attach to this request
-         meta: 1,
-       }
-     )
-     .then((response) => {
-       // Status code (200, 400, etc.)
-       console.log(response.status);
-       // JSON response
-       console.log(response.body);
-     })
-     .catch(console.error);
-   ```
+    producer
+      .enqueue(
+        discordEndpoint,
+        {
+          // node-fetch options.
+          method: "POST",
+          body: JSON.stringify(payload),
+        },
+        {
+          // Any meta info you'd like to attach to this request
+          meta: 1,
+        }
+      )
+      .then((response) => {
+        // Status code (200, 400, etc.)
+        console.log(response.status);
+        // JSON response
+        console.log(response.body);
+      })
+      .catch(console.error);
+    ```
 
-   If you execute multiple requests asynchronously, for example:
+    If you execute multiple requests asynchronously, for example:
 
-   ```ts
-   for (let i = 0; i < 3; ++i) {
-     producer
-       .enqueue("https://discord.com/api/channels/channelID/messages", {
-         method: "POST",
-         body: JSON.stringify({
-           content: i,
-         }),
-       })
-       .then(() => console.log(i))
-       .catch(console.error);
-   }
-   ```
+    ```ts
+    for (let i = 0; i < 3; ++i) {
+      producer
+        .enqueue("https://discord.com/api/channels/channelID/messages", {
+          method: "POST",
+          body: JSON.stringify({
+            content: i,
+          }),
+        })
+        .then(() => console.log(i))
+        .catch(console.error);
+    }
+    ```
 
-   ```shell
-   1
-   2
-   3
-   ```
+    ```shell
+    1
+    2
+    3
+    ```
 
-   You will notice that they are executed in order since they are all within the same rate limit bucket.
+  You will notice that they are executed in order since they are all within the same rate limit bucket.
 
-### Custom Options
-
-Options can be passed into the `RESTConsumer`.
-
-```ts
-import { RESTConsumer } from "@synzen/discord-rest";
-
-const options = {
-  /**
-   * Maximum number of invalid requests allowed within 10
-   * minutes before delaying all further requests by
-   * 10 minutes. For more details, see the Handle Invalid
-   * Requests section.
-   *
-   * Default is half of the hard limit, where the hard limit
-   * is 10,000. Has no effect if delayOnInvalidThreshold is
-   * false.
-   */
-  invalidRequestsThreshold: 5000,
-  /**
-   * Whether to delay all requests by 10 minutes when the
-   * invalid requests threshold is reached. For more details,
-   * see the Handle Invalid Requests section.
-   *
-   * Default is true
-   */
-  delayOnInvalidThreshold: true,
-  /**
-   * Milliseconds to wait for an API request before automatically
-   * timing it out
-   *
-   * Default is 10000 (10 seconds)
-   */
-  requestTimeout: 10000,
-  /**
-   * Number of request retries on API request timeouts
-   *
-   * Default is 3
-   */
-  requestTimeoutRetries: 3,
-  /**
-   * Multiple of the duration to block the queue by when a global
-   * limit is hit. It could be safer to block longer than what Discord
-   * suggests for safety.
-   *
-   * Default is 1
-   */
-  globalBlockDurationMultiple: 1,
-  /**
-   * Maximum number of requests to execute per second.
-   *
-   * Default is 50 since it is the maximum allowed by Discord
-   * https://discord.com/developers/docs/topics/rate-limits#global-rate-limit
-   */
-  maxRequestsPerSecond: 50,
-};
-
-const consumer = new RESTConsumer(options);
-```
 
 ## Handle Invalid Requests
 
