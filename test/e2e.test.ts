@@ -123,6 +123,7 @@ describe('e2e test', () => {
   })
 
   afterAll(async () => {
+    nock.cleanAll()
     await consumer?.close()
     await producer?.close()
   })

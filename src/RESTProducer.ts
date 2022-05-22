@@ -1,6 +1,7 @@
 import { JobData, JobResponse, JobResponseError } from './RESTConsumer'
 import { nanoid } from 'nanoid'
 import amqp from 'amqplib'
+import { getQueueConfig, getQueueName } from './constants/queue-configs';
 
 interface Options {
   clientId: string;
@@ -30,16 +31,9 @@ class RESTProducer {
     // const amqpClient = // new AMQPClient(this.rabbitmqUri)
     const connection = await amqp.connect(this.rabbitmqUri)
     const channel = await connection.createChannel()
-    await channel.assertQueue(`discord-messages-${this.options.clientId}`, {
-      durable: true,
-      autoDelete: this.options.autoDeleteQueues,
-      arguments: {
-        'x-single-active-consumer': true,
-        'x-max-priority': 255,
-        'x-queue-mode': 'lazy',
-        'x-message-ttl': 1000 * 60 * 60 * 24 // 1 day
-      }
-    })
+    await channel.assertQueue(getQueueName(this.options.clientId), getQueueConfig({
+      autoDeleteQueues: this.options.autoDeleteQueues || false
+    }))
 
     this.rabbitmq = {
       channel,
@@ -48,7 +42,12 @@ class RESTProducer {
   }
 
   public async close(): Promise<void> {
-    await this.rabbitmq?.connection.close()
+    if (!this.rabbitmq) {
+      return
+    }
+  
+    await this.rabbitmq.channel.close()
+    await this.rabbitmq.connection.close()
   }
 
   /**
@@ -78,7 +77,7 @@ class RESTProducer {
     }
 
     await this.rabbitmq.channel.sendToQueue(
-      `discord-messages-${this.options.clientId}`,
+      getQueueName(this.options.clientId),
       Buffer.from(JSON.stringify(jobData)),
       {
         deliveryMode: 2,
@@ -123,14 +122,17 @@ class RESTProducer {
     const replyQueue = await rabbitmq.channel.assertQueue('', {
       autoDelete: true,
       exclusive: true,
+      durable: false,
       arguments: {
         'x-expires': 1000 * 60 * 5 // 5 minutes
       }
     })
+
+    let consumerTag: string | null = null
   
     const response = new Promise<JobResponse<JSONResponse>>(async (resolve, reject) => {
       try {
-        rabbitmq.channel.consume(replyQueue.queue, async (message) => {
+        const consumer = await rabbitmq.channel.consume(replyQueue.queue, async (message) => {
           
           if (!message || message.properties.correlationId !== jobData.id) {
             return
@@ -140,23 +142,31 @@ class RESTProducer {
             const parsedJson = JSON.parse(message.content.toString())
             resolve(parsedJson)
           } catch (err) {
-            throw new Error('Failed to parse JSON from RPC response')
+            reject(new Error('Failed to parse JSON from RPC response'))
           }
         }, {
           noAck: true
         })
+
+        consumerTag = consumer.consumerTag
       } catch (err) {
         reject(err)
       }
     })
 
-    await rabbitmq.channel.sendToQueue(`discord-messages-${this.options.clientId}`, Buffer.from(JSON.stringify(jobData)), {
+    await rabbitmq.channel.sendToQueue(getQueueName(this.options.clientId), Buffer.from(JSON.stringify(jobData)), {
       deliveryMode: 2,
       replyTo: replyQueue.queue,
       correlationId: jobData.id,
     })
 
-    return response
+    const finalRes = await response
+    
+    if (consumerTag) {
+      rabbitmq.channel.cancel(consumerTag)
+    }
+    
+    return finalRes
   }
 }
 

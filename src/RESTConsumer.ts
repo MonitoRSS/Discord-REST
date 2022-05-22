@@ -3,6 +3,7 @@ import { EventEmitter } from "events";
 import { MessageParseError, MessageProcessingError, RequestTimeoutError } from "./errors";
 import * as yup from 'yup'
 import amqp from 'amqplib'
+import { getQueueConfig, getQueueName } from "./constants/queue-configs";
 
 interface ConsumerOptions {
   /**
@@ -62,6 +63,7 @@ class RESTConsumer extends EventEmitter {
   private rabbitmq: {
     connection: amqp.Connection,
     channel: amqp.Channel,
+    consumerTag: string;
   } | null = null;
 
   constructor(
@@ -79,19 +81,12 @@ class RESTConsumer extends EventEmitter {
     this.handler = new RESTHandler(this.options)
     const connection = await amqp.connect(this.rabbitmqUri)
     const channel = await connection.createChannel()
-    const queueName = `discord-messages-${this.consumerOptions.clientId}`
-    await channel.assertQueue(queueName, {
-      durable: true,
-      autoDelete: this.consumerOptions.autoDeleteQueues,
-      arguments: {
-        'x-single-active-consumer': true,
-        'x-max-priority': 255,
-        'x-queue-mode': 'lazy',
-        'x-message-ttl': 1000 * 60 * 60 * 24 // 1 day
-      }
-    })
+    const queueName = getQueueName(this.consumerOptions.clientId)
+    await channel.assertQueue(queueName, getQueueConfig({
+      autoDeleteQueues: this.consumerOptions.autoDeleteQueues || false
+    }))
 
-    await channel.consume(queueName, async (message) => {
+    const consumer = await channel.consume(queueName, async (message) => {
       let data: JobData;
 
       if (!message) {
@@ -136,17 +131,22 @@ class RESTConsumer extends EventEmitter {
       }
 
       channel.ack(message)
-    }, { noAck: false })
+    }, { noAck: false })    
 
     this.rabbitmq = {
       channel,
       connection,
+      consumerTag: consumer.consumerTag
     }
   }
 
   async close(): Promise<void> {
-    await this.rabbitmq?.connection.close()
-    // this.rabbitmq?.channel.close()
+    if (!this.rabbitmq) {
+      return
+    }
+
+    await this.rabbitmq.channel.close()
+    await this.rabbitmq.connection.close()
   }
 
   async validateMessage(message: amqp.Message): Promise<JobData> {
