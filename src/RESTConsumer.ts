@@ -1,9 +1,8 @@
 import RESTHandler, { RESTHandlerOptions } from "./RESTHandler";
 import { EventEmitter } from "events";
-import { AMQPChannel, AMQPClient, AMQPConsumer, AMQPMessage } from "@cloudamqp/amqp-client";
 import { MessageParseError, MessageProcessingError, RequestTimeoutError } from "./errors";
-import { AMQPBaseClient } from "@cloudamqp/amqp-client/types/amqp-base-client";
 import * as yup from 'yup'
+import amqp from 'amqplib'
 
 interface ConsumerOptions {
   /**
@@ -61,9 +60,8 @@ class RESTConsumer extends EventEmitter {
   public handler: RESTHandler | null = null
 
   private rabbitmq: {
-    connection: AMQPBaseClient,
-    channel: AMQPChannel,
-    consumer: AMQPConsumer
+    connection: amqp.Connection,
+    channel: amqp.Channel,
   } | null = null;
 
   constructor(
@@ -78,28 +76,33 @@ class RESTConsumer extends EventEmitter {
   }
 
   async initialize(): Promise<void> {
-    const amqpClient = new AMQPClient(this.rabbitmqUri)
     this.handler = new RESTHandler(this.options)
-    const connection = await amqpClient.connect()
-    const channel = await connection.channel()
-    const queue = await channel.queue(`discord-messages-${this.consumerOptions.clientId}`, {
+    const connection = await amqp.connect(this.rabbitmqUri)
+    const channel = await connection.createChannel()
+    const queueName = `discord-messages-${this.consumerOptions.clientId}`
+    await channel.assertQueue(queueName, {
       durable: true,
-      autoDelete: this.consumerOptions.autoDeleteQueues
-    }, {
-      'x-single-active-consumer': true,
-      'x-max-priority': 255,
-      'x-queue-mode': 'lazy',
-      'x-message-ttl': 1000 * 60 * 60 * 24 // 1 day
+      autoDelete: this.consumerOptions.autoDeleteQueues,
+      arguments: {
+        'x-single-active-consumer': true,
+        'x-max-priority': 255,
+        'x-queue-mode': 'lazy',
+        'x-message-ttl': 1000 * 60 * 60 * 24 // 1 day
+      }
     })
 
-    const consumer = await queue.subscribe({ noAck: false }, async (message) => {
+    await channel.consume(queueName, async (message) => {
       let data: JobData;
+
+      if (!message) {
+        return
+      }
         
       try {
         data = await this.validateMessage(message)
       } catch (err) {
         this.emit('err', new MessageParseError((err as Error).message))
-        await message.ack()
+        channel.ack(message)
 
         return;
       }
@@ -127,35 +130,27 @@ class RESTConsumer extends EventEmitter {
       }
 
       if (data.rpc) {
-        const callbackQueue = await channel.queue(message.properties.replyTo, {
-          autoDelete: true,
-        }, {
-          'x-expires': 1000 * 60 * 5 // 5 minutes
-        })
-
-        await callbackQueue.publish(JSON.stringify(response), {
+        await channel.sendToQueue(message.properties.replyTo, Buffer.from(JSON.stringify(response)), {
           correlationId: message.properties.correlationId,
         })
       }
 
-      await message.ack()
-    })
+      channel.ack(message)
+    }, { noAck: false })
 
     this.rabbitmq = {
       channel,
       connection,
-      consumer
     }
   }
 
   async close(): Promise<void> {
-    await this.rabbitmq?.consumer.cancel()
-    await this.rabbitmq?.consumer.wait()
     await this.rabbitmq?.connection.close()
+    // this.rabbitmq?.channel.close()
   }
 
-  async validateMessage(message: AMQPMessage): Promise<JobData> {
-    const json = JSON.parse(message.bodyToString() || '')
+  async validateMessage(message: amqp.Message): Promise<JobData> {
+    const json = JSON.parse(message.content.toString())
     return await jobDataSchema.validate(json)
   }
 

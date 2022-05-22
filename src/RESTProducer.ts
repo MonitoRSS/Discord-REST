@@ -1,7 +1,6 @@
-import { AMQPChannel, AMQPClient, AMQPQueue } from "@cloudamqp/amqp-client"
-import { AMQPBaseClient } from "@cloudamqp/amqp-client/types/amqp-base-client"
 import { JobData, JobResponse, JobResponseError } from './RESTConsumer'
 import { nanoid } from 'nanoid'
+import amqp from 'amqplib'
 
 interface Options {
   clientId: string;
@@ -18,9 +17,8 @@ interface RequestOptions extends RequestInit {
 
 class RESTProducer {
   private rabbitmq: {
-    connection: AMQPBaseClient,
-    channel: AMQPChannel,
-    queue: AMQPQueue
+    connection: amqp.Connection,
+    channel: amqp.Channel,
   } | null = null;
 
   constructor(
@@ -29,23 +27,23 @@ class RESTProducer {
   ) {}
 
   public async initialize(): Promise<void> {
-    const amqpClient = new AMQPClient(this.rabbitmqUri)
-    const connection = await amqpClient.connect()
-    const channel = await connection.channel()
-    const queue = await channel.queue(`discord-messages-${this.options.clientId}`, {
+    // const amqpClient = // new AMQPClient(this.rabbitmqUri)
+    const connection = await amqp.connect(this.rabbitmqUri)
+    const channel = await connection.createChannel()
+    await channel.assertQueue(`discord-messages-${this.options.clientId}`, {
       durable: true,
       autoDelete: this.options.autoDeleteQueues,
-    }, {
-      'x-single-active-consumer': true,
-      'x-max-priority': 255,
-      'x-queue-mode': 'lazy',
-      'x-message-ttl': 1000 * 60 * 60 * 24 // 1 day
+      arguments: {
+        'x-single-active-consumer': true,
+        'x-max-priority': 255,
+        'x-queue-mode': 'lazy',
+        'x-message-ttl': 1000 * 60 * 60 * 24 // 1 day
+      }
     })
 
     this.rabbitmq = {
       channel,
       connection,
-      queue,
     }
   }
 
@@ -79,9 +77,17 @@ class RESTProducer {
       rpc: false,
     }
 
-    await this.rabbitmq.queue.publish(JSON.stringify(jobData), {
-      deliveryMode: 2,
-    })
+    await this.rabbitmq.channel.sendToQueue(
+      `discord-messages-${this.options.clientId}`,
+      Buffer.from(JSON.stringify(jobData)),
+      {
+        deliveryMode: 2,
+      }
+    )
+
+    // await this.rabbitmq.queue.publish(JSON.stringify(jobData), {
+    //   deliveryMode: 2,
+    // })
   }
 
   /**
@@ -97,11 +103,12 @@ class RESTProducer {
     options: RequestInit = {},
     meta?: Record<string, unknown>
   ): Promise<JobResponse<JSONResponse> | JobResponseError> {
+    const rabbitmq = this.rabbitmq
     if (!route) {
       throw new Error(`Missing route for RESTProducer enqueue`)
     }
 
-    if (!this.rabbitmq) {
+    if (!rabbitmq) {
       throw new Error(`RESTProducer must be initialized with initialize() before enqueue`)
     }
 
@@ -113,36 +120,39 @@ class RESTProducer {
       rpc: true,
     }
 
-    const replyQueue = await this.rabbitmq.channel.queue(`discord-messages-callback-${jobData.id}`, {
+    const replyQueue = await rabbitmq.channel.assertQueue('', {
       autoDelete: true,
-    }, {
-      'x-expires': 1000 * 60 * 5 // 5 minutes
+      exclusive: true,
+      arguments: {
+        'x-expires': 1000 * 60 * 5 // 5 minutes
+      }
     })
   
     const response = new Promise<JobResponse<JSONResponse>>(async (resolve, reject) => {
       try {
-        const consumer = await replyQueue.subscribe({ noAck: true }, async (message) => {
-          if (message.properties.correlationId !== jobData.id) {
+        rabbitmq.channel.consume(replyQueue.queue, async (message) => {
+          
+          if (!message || message.properties.correlationId !== jobData.id) {
             return
           }
 
           try {
-            const parsedJson = JSON.parse(message.bodyToString() || '')
+            const parsedJson = JSON.parse(message.content.toString())
             resolve(parsedJson)
           } catch (err) {
             throw new Error('Failed to parse JSON from RPC response')
-          } finally {
-            await consumer.cancel()
           }
+        }, {
+          noAck: true
         })
       } catch (err) {
         reject(err)
       }
     })
 
-    await this.rabbitmq.queue.publish(JSON.stringify(jobData), {
+    await rabbitmq.channel.sendToQueue(`discord-messages-${this.options.clientId}`, Buffer.from(JSON.stringify(jobData)), {
       deliveryMode: 2,
-      replyTo: replyQueue.name,
+      replyTo: replyQueue.queue,
       correlationId: jobData.id,
     })
 

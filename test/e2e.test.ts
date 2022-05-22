@@ -55,13 +55,14 @@ describe('e2e test', () => {
       })
 
       it('returns the correct properties on non-200 fetch', async () => {
-        const apiStatus = 500
+        const apiStatus = 400
         const apiResponse = {
           foo: 'bar'
         }
         nock('https://example.com')
           .get('/messages')
           .reply(apiStatus, apiResponse)
+          .persist()
     
         const result = await producer.fetch(route)
         expect(result.state).toEqual('success')
@@ -89,7 +90,7 @@ describe('e2e test', () => {
       })
 
       it('returns if content is not json', async () => {
-        const apiStatus = 500
+        const apiStatus = 400
         const apiResponse = 'text here'
         nock('https://example.com')
           .get('/messages')
@@ -109,6 +110,7 @@ describe('e2e test', () => {
         nock('https://example.com')
           .get('/messages')
           .replyWithError(apiResponse)
+          .persist()
     
         const result = await producer.fetch(route)
         expect(result.state).toEqual('error')
