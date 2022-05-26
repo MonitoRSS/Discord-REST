@@ -63,7 +63,7 @@ class RESTConsumer extends EventEmitter {
   private rabbitmq: {
     connection: amqp.Connection,
     channel: amqp.Channel,
-    consumerTag: string;
+    consumerTag?: string
   } | null = null;
 
   constructor(
@@ -78,13 +78,65 @@ class RESTConsumer extends EventEmitter {
   }
 
   async initialize(): Promise<void> {
-    this.handler = new RESTHandler(this.options)
+    this.handler = new RESTHandler({
+      ...this.options,
+      /**
+       * Messages should re-enter the queue if we encounter a global block, so don't execute them
+       * later on in this consumer, otherwise articles would be significantly delayed.
+       */
+      clearQueueAfterGlobalBlock: true
+    })
+
+    this.handler.on('globalBlock', (durationMs) => {
+      this.emit('globalBlock', durationMs)
+      this.stopConsumer()
+    })
+
+    this.handler.on('globalRestore', () => {
+      this.emit('globalRestore')
+      this.startConsumer()
+    })
+
     const connection = await amqp.connect(this.rabbitmqUri)
     const channel = await connection.createChannel()
     const queueName = getQueueName(this.consumerOptions.clientId)
     await channel.assertQueue(queueName, getQueueConfig({
       autoDeleteQueues: this.consumerOptions.autoDeleteQueues || false
     }))
+
+    await this.startConsumer()
+
+    this.rabbitmq = {
+      channel,
+      connection,
+    }
+  }
+
+  async close(): Promise<void> {
+    if (!this.rabbitmq) {
+      return
+    }
+
+    await this.rabbitmq.channel.close()
+    await this.rabbitmq.connection.close()
+  }
+
+  async validateMessage(message: amqp.Message): Promise<JobData> {
+    const json = JSON.parse(message.content.toString())
+    return await jobDataSchema.validate(json)
+  }
+
+  private async startConsumer() {
+    if (!this.rabbitmq) {
+      throw new Error('RabbitMQ not initialized')
+    }
+
+    if (this.rabbitmq.consumerTag) {
+      throw new Error('Consumer already started')
+    }
+    
+    const channel = this.rabbitmq.channel
+    const queueName = getQueueName(this.consumerOptions.clientId)
 
     const consumer = await channel.consume(queueName, async (message) => {
       let data: JobData;
@@ -133,25 +185,20 @@ class RESTConsumer extends EventEmitter {
       channel.ack(message)
     }, { noAck: false })    
 
-    this.rabbitmq = {
-      channel,
-      connection,
-      consumerTag: consumer.consumerTag
-    }
+    this.rabbitmq.consumerTag = consumer.consumerTag
   }
 
-  async close(): Promise<void> {
+  private async stopConsumer() {
     if (!this.rabbitmq) {
-      return
+      throw new Error('RabbitMQ not initialized')
     }
 
-    await this.rabbitmq.channel.close()
-    await this.rabbitmq.connection.close()
-  }
+    if (!this.rabbitmq.consumerTag) {
+      throw new Error('Consumer not started')
+    }
 
-  async validateMessage(message: amqp.Message): Promise<JobData> {
-    const json = JSON.parse(message.content.toString())
-    return await jobDataSchema.validate(json)
+    await this.rabbitmq.channel.cancel(this.rabbitmq.consumerTag)
+    this.rabbitmq.consumerTag = undefined
   }
 
   private async processJobData(data: JobData) {

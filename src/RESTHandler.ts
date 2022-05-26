@@ -57,14 +57,7 @@ export type RESTHandlerOptions = {
 }
 
 declare interface RESTHandler {
-  /**
-   * When a global block is in place. This can be from cloudflare rate limits, invalid requests
-   * threshold, and global rate limits (from Discord).
-   */
   emit(event: 'globalBlock', blockedDurationMs: number): boolean
-  /**
-   * When a global block has been expired
-   */
   emit(event: 'globalRestore'): boolean
   emit(event: 'rateLimit', apiRequest: APIRequest, blockedDurationMs: number): boolean
   emit(event: 'globalRateLimit', apiRequest: APIRequest, blockedDurationMs: number): boolean
@@ -72,6 +65,15 @@ declare interface RESTHandler {
   emit(event: 'idle'|'active'): boolean
   emit(event: 'invalidRequestsThreshold', threshold: number): boolean
   emit(event: 'cloudflareRateLimit', apiRequest: APIRequest, blockedDurationMs: number): boolean
+  /**
+   * When a global block is in place. This can be from cloudflare rate limits, invalid requests
+   * threshold, and global rate limits (from Discord).
+   */
+  on(event: 'globalBlock', listener: (blockedDurationMs: number) => void): this
+  /**
+   * When a global block has been expired
+   */
+  on(event: 'globalRestore', listener: () => void): this
   /**
    * When a bucket rate limit is encountered
    */
