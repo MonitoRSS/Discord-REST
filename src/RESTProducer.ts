@@ -2,6 +2,7 @@ import { JobData, JobResponse, JobResponseError } from './RESTConsumer'
 import { nanoid } from 'nanoid'
 import amqp from 'amqplib'
 import { getQueueConfig, getQueueName } from './constants/queue-configs';
+import { QUEUE_PRIORITY } from './constants/queue-priority';
 
 interface Options {
   clientId: string;
@@ -14,6 +15,7 @@ interface Options {
 
 interface RequestOptions extends RequestInit {
   rpc?: boolean
+  priority?: QUEUE_PRIORITY
 }
 
 class RESTProducer {
@@ -81,6 +83,7 @@ class RESTProducer {
       Buffer.from(JSON.stringify(jobData)),
       {
         deliveryMode: 2,
+        priority: options.priority || QUEUE_PRIORITY.LOW,
       }
     )
 
@@ -158,6 +161,7 @@ class RESTProducer {
       deliveryMode: 2,
       replyTo: replyQueue.queue,
       correlationId: jobData.id,
+      priority: QUEUE_PRIORITY.HIGH,
     })
 
     const finalRes = await response

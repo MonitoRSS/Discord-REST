@@ -5,6 +5,7 @@ import RESTConsumer, {
   JobData,
   JobResponse,
 } from './RESTConsumer'
+import { QUEUE_PRIORITY } from './constants/queue-priority'
 
 export {
   RESTHandler,
@@ -13,4 +14,5 @@ export {
   RESTConsumer,
   JobData,
   JobResponse,
+  QUEUE_PRIORITY,
 }
