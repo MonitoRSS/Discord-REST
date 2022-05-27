@@ -12,7 +12,6 @@ By default, outgoing requests are throttled at a maximum of 30/second (lower tha
     - [Table of Contents](#table-of-contents)
   - [Install](#install)
   - [Usage](#usage)
-  - [Handle Invalid Requests](#handle-invalid-requests)
   - [Debugging](#debugging)
 
 ## Install
@@ -96,54 +95,21 @@ npm i @synzen/discord-rest
   You will notice that they are executed in order since they are all within the same rate limit bucket.
 
 
-## Handle Invalid Requests
-
-If you encounter too many invalid requests within a certain time frame, Discord will temporarily block your IP as noted in https://discord.com/developers/docs/topics/rate-limits#invalid-request-limit. An invalid request (as it is currently defined at the time of this writing), is a response of 429, 401, or 403. The hard limit for Discord is 10,000 invalid requests within 10 minutes. You can listen for invalid requests like so:
+If you'd like to specifically listen for global blocks, you can use the following events. Note that this is
 
 ```ts
-const consumer = new RESTConsumer();
+import { GLOBAL_BLOCK_TYPE } from '@synzen/discord-rest';
 
-// Listen for API responses with status codes 429, 401 and 403
-consumer.handler.on("invalidRequest", (apiRequest, countSoFar) => {
-  console.error(
-    `Invalid request for ${apiRequest.toString()} (${countSoFar} total within 10 minutes)`
-  );
-});
-```
-
-This library will delay and queue up all further requests for 10 minutes after it encounters 5,000 invalid requests within 10 minutes. You can listen to this event.
-
-```ts
-consumer.handler.on("invalidRequestsThreshold", (threshold) => {
-  console.error(
-    `Number of invalid requests exceeded threshold (${threshold}), delaying all tasks by 10 minutes`
-  );
-});
-```
-
-If you'd like to specifically listen for rate limit hits, you can use the following events.
-
-```ts
-// Listen for bucket rate limit encounters
-consumer.handler.on("rateLimit", (apiRequest, blockedDurationMs) => {
-  console.error(
-    `Bucket rate limit hit for ${apiRequest.toString()} (blocked for ${blockedDurationMs}ms)`
-  );
-});
-
-// Listen for global rate limit encounters
-consumer.handler.on("globalRateLimit", (apiRequest, blockedDurationMs) => {
-  console.error(
-    `Global rate limit hit for ${apiRequest.toString()} (blocked for ${blockedDurationMs}ms)`
-  );
-});
-
-// Listen for cloudflare IP bans
-consumer.handler.on("cloudflareLimit", (apiRequest, blockedDurationMs) => {
-  console.error(
-    `Cloudflare IP ban detected for ${apiRequest.toString()} (blocked for ${blockedDurationMs}ms)`
-  );
-});
+consumer.on('globalBlock', (blockType, durationMs) => {
+  if (blockType === GLOBAL_BLOCK_TYPE.GLOBAL_RATE_LIMIT) {
+    // Listen for blocks because of global rate limits from Discord
+  } else if (blockType === GLOBAL_BLOCK_TYPE.CLOUDFLARE_RATE_LIMIT) {
+    // Listen for blocks because of cloudflare IP bans
+  } else if (blockType === GLOBAL_BLOCK_TYPE.INVALID_REQUEST) {
+    // Listen for blocks that are encountered from too many invalid requests, which are 429, 401, 403 codes.
+    // This is a pre-emptive safety block BEFORE an IP ban from Cloudflare is encountered.
+  }
+})
 ```
 
 ## Debugging
