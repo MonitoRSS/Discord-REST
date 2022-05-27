@@ -4,6 +4,7 @@ import { MessageParseError, MessageProcessingError, RequestTimeoutError } from "
 import * as yup from 'yup'
 import amqp from 'amqplib'
 import { getQueueConfig, getQueueName } from "./constants/queue-configs";
+import { GlobalBlockType } from "./constants/global-block-type";
 
 interface ConsumerOptions {
   /**
@@ -48,6 +49,18 @@ export interface JobResponseError {
   message: string
 }
 
+
+declare interface RESTConsumer {
+  emit(event: 'globalBlock', blockType: GlobalBlockType, blockedDurationMs: number): boolean
+  emit(event: 'globalRestore', blockType: GlobalBlockType): boolean
+  emit(event: 'requestError', error: Error, job: JobData): boolean
+  emit(event: 'err', error: Error): boolean
+  on(event: 'globalBlock', listener: (blockType: GlobalBlockType, blockedDurationMs: number) => void): this
+  on(event: 'globalRestore', listener: (blockType: GlobalBlockType) => void): this
+  on(event: 'requestError', listener: (err: Error, job: JobData) => void): this
+  on(event: 'err', listener: (err: Error) => void): this
+}
+
 /**
  * Used to consume and enqueue Discord API requests. There should only ever be one consumer that's
  * executing requests across all services for proper rate limit handling.
@@ -87,13 +100,13 @@ class RESTConsumer extends EventEmitter {
       clearQueueAfterGlobalBlock: true
     })
 
-    this.handler.on('globalBlock', (durationMs) => {
-      this.emit('globalBlock', durationMs)
+    this.handler.on('globalBlock', (blockType, durationMs) => {
+      this.emit('globalBlock', blockType, durationMs)
       this.stopConsumer()
     })
 
-    this.handler.on('globalRestore', () => {
-      this.emit('globalRestore')
+    this.handler.on('globalRestore', (blockType) => {
+      this.emit('globalRestore', blockType)
       this.startConsumer()
     })
 
@@ -170,9 +183,9 @@ class RESTConsumer extends EventEmitter {
           message
         }
         if (err instanceof RequestTimeoutError) {
-          this.emit('err', err, data)
+          this.emit('requestError', err, data)
         } else {
-          this.emit('err', new MessageProcessingError(message), data)
+          this.emit('requestError', new MessageProcessingError(message), data)
         }
       }
 

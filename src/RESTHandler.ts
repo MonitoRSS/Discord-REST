@@ -3,6 +3,7 @@ import APIRequest from "./APIRequest";
 import { EventEmitter } from "events";
 import PQueue, { DefaultAddOptions, Options } from 'p-queue'
 import PriorityQueue from "p-queue/dist/priority-queue";
+import { GlobalBlockType } from "./constants/global-block-type";
 
 export type RESTHandlerOptions = {
   /**
@@ -56,47 +57,31 @@ export type RESTHandlerOptions = {
    clearQueueAfterGlobalBlock?: boolean
 }
 
+
 declare interface RESTHandler {
-  emit(event: 'globalBlock', blockedDurationMs: number): boolean
-  emit(event: 'globalRestore'): boolean
+  emit(event: 'globalBlock', type: GlobalBlockType, blockedDurationMs: number): boolean
+  emit(event: 'globalRestore', type: GlobalBlockType): boolean
   emit(event: 'rateLimit', apiRequest: APIRequest, blockedDurationMs: number): boolean
-  emit(event: 'globalRateLimit', apiRequest: APIRequest, blockedDurationMs: number): boolean
   emit(event: 'invalidRequest', apiRequest: APIRequest, countSoFar: number): boolean
   emit(event: 'idle'|'active'): boolean
-  emit(event: 'invalidRequestsThreshold', threshold: number): boolean
-  emit(event: 'cloudflareRateLimit', apiRequest: APIRequest, blockedDurationMs: number): boolean
   /**
    * When a global block is in place. This can be from cloudflare rate limits, invalid requests
    * threshold, and global rate limits (from Discord).
    */
-  on(event: 'globalBlock', listener: (blockedDurationMs: number) => void): this
+  on(event: 'globalBlock', listener: (type: GlobalBlockType, blockedDurationMs: number) => void): this
   /**
    * When a global block has been expired
    */
-  on(event: 'globalRestore', listener: () => void): this
+  on(event: 'globalRestore', listener: (type: GlobalBlockType) => void): this
   /**
    * When a bucket rate limit is encountered
    */
   on(event: 'rateLimit', listener: (apiRequest: APIRequest, blockedDurationMs: number) => void): this;
   /**
-   * When a global rate limit is encountered
-   */
-  on(event: 'globalRateLimit', listener: (apiRequest: APIRequest, blockedDurationMs: number) => void): this;
-  /**
    * When an invalid request that count towards a hard limit
    * is encountered.
    */
   on(event: 'invalidRequest', listener: (apiRequest: APIRequest, countSoFar: number) => void): this
-  /**
-   * When the number of invalid requests threshold has been reached,
-   * all requests are delayed by 10 minutes
-   */
-  on(event: 'invalidRequestsThreshold', listener: (threshold: number) => void): this
-  /**
-   * When the IP has likely been banned for several hours after exceeding the maximum rate
-   * limits allowed within a duration.
-   */
-  on(event: 'cloudflareRateLimit', listener: (apiRequest: APIRequest, blockedDurationMs: number) => void): this;
 }
 
 /**
@@ -194,8 +179,10 @@ class RESTHandler extends EventEmitter {
     ++this.invalidRequestsCount
     if (this.invalidRequestsCount === this.invalidRequestsThreshold) {
       // Block all buckets from executing requests for 10 min
-      this.blockGloballyByDuration(1000 * 60 * 10)
-      this.emit('invalidRequestsThreshold', this.invalidRequestsCount)
+      this.blockGloballyByDuration({
+        durationMs: 1000 * 60 * 10,
+        blockType: GlobalBlockType.INVALID_REQUEST
+      })
     }
   }
 
@@ -205,8 +192,10 @@ class RESTHandler extends EventEmitter {
   private registerBucketListener (bucket: Bucket) {
     bucket.on('recognizeURLBucket', this.recognizeURLBucket.bind(this))
     bucket.on('globalRateLimit', (apiRequest, durationMs) => {
-      this.blockGloballyByDuration(durationMs)
-      this.emit('globalRateLimit', apiRequest, durationMs)
+      this.blockGloballyByDuration({
+        durationMs,
+        blockType: GlobalBlockType.GLOBAL_RATE_LIMIT
+      })
     })
     bucket.on('rateLimit', (apiRequest: APIRequest, durationMs: number) => {
       this.emit('rateLimit', apiRequest, durationMs)
@@ -216,8 +205,10 @@ class RESTHandler extends EventEmitter {
       this.emit('invalidRequest', apiRequest, this.invalidRequestsCount)
     })
     bucket.on('cloudflareRateLimit', (apiRequest: APIRequest, durationMs) => {
-      this.blockGloballyByDuration(durationMs)
-      this.emit('cloudflareRateLimit', apiRequest, durationMs)
+      this.blockGloballyByDuration({
+        durationMs,
+        blockType: GlobalBlockType.CLOUDFLARE_RATE_LIMIT
+      })
     })
   }
 
@@ -279,7 +270,13 @@ class RESTHandler extends EventEmitter {
    * If there's already a timer, the previous timer is cleared
    * and is recreated
    */
-     private blockGloballyByDuration (durationMs: number) {
+     private blockGloballyByDuration ({
+       durationMs,
+       blockType
+     }: {
+       durationMs: number,
+       blockType: GlobalBlockType
+     }) {
       const blockDuration = durationMs * this.globalBlockDurationMultiple
       this.blockBucketsByDuration(blockDuration)
 
@@ -293,12 +290,12 @@ class RESTHandler extends EventEmitter {
         this.queue.clear()
       }
 
-      this.emit('globalBlock', blockDuration)
+      this.emit('globalBlock', blockType, blockDuration)
 
       this.queueBlockTimer = setTimeout(() => {
         this.queue.start()
         this.queueBlockTimer = null
-        this.emit('globalRestore')
+        this.emit('globalRestore', blockType)
       }, blockDuration)
     }
 
