@@ -125,12 +125,12 @@ class RESTConsumer extends EventEmitter {
       autoDeleteQueues: this.consumerOptions.autoDeleteQueues || false
     }))
 
-    await this.startConsumer()
-
     this.rabbitmq = {
       channel,
       connection,
     }
+
+    await this.startConsumer()
   }
 
   async close(): Promise<void> {
