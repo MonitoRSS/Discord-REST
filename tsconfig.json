@@ -69,6 +69,7 @@
   "exclude": [
     "src/discord.ts",
     "dist",
-    "test"
+    "test",
+    "examples"
   ]
 }
