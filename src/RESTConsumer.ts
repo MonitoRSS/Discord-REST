@@ -16,6 +16,11 @@ interface ConsumerOptions {
    */
   clientId: string;
   /**
+   * Prior to processing a message, use this function to check if it's already been processed.
+   * This is optional since in RPC, we don't care about checking for duplicates
+   */
+  checkIsDuplicate?: (jobId: string) => Promise<boolean>
+  /**
    * Automatically delete all queues after all messages has been consumed. This is for
    * integration testing.
    */
@@ -173,6 +178,12 @@ class RESTConsumer extends EventEmitter {
         channel.ack(message)
 
         return;
+      }
+
+      if (await this.consumerOptions.checkIsDuplicate?.(data.id)) {
+        channel.ack(message)
+
+        return
       }
   
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -20,6 +20,7 @@ describe('e2e test', () => {
       authHeader: 'header',
       clientId,
       autoDeleteQueues: true,
+      checkIsDuplicate: async () => false
     });
 
     await consumer.initialize()
