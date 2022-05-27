@@ -6,6 +6,7 @@ import RESTConsumer, {
   JobResponse,
 } from './RESTConsumer'
 import { QUEUE_PRIORITY } from './constants/queue-priority'
+import { GLOBAL_BLOCK_TYPE } from './constants/global-block-type'
 
 export {
   RESTHandler,
@@ -15,4 +16,5 @@ export {
   JobData,
   JobResponse,
   QUEUE_PRIORITY,
+  GLOBAL_BLOCK_TYPE,
 }

@@ -4,7 +4,7 @@ import { MessageParseError, MessageProcessingError, RequestTimeoutError } from "
 import * as yup from 'yup'
 import amqp from 'amqplib'
 import { getQueueConfig, getQueueName } from "./constants/queue-configs";
-import { GlobalBlockType } from "./constants/global-block-type";
+import { GLOBAL_BLOCK_TYPE } from "./constants/global-block-type";
 
 interface ConsumerOptions {
   /**
@@ -51,16 +51,22 @@ export interface JobResponseError {
 
 
 declare interface RESTConsumer {
-  emit(event: 'globalBlock', blockType: GlobalBlockType, blockedDurationMs: number): boolean
-  emit(event: 'globalRestore', blockType: GlobalBlockType): boolean
+  emit(event: 'globalBlock', blockType: GLOBAL_BLOCK_TYPE, blockedDurationMs: number): boolean
+  emit(event: 'globalRestore', blockType: GLOBAL_BLOCK_TYPE): boolean
   emit(event: 'jobError', error: Error, job: JobData): boolean
   emit(event: 'err', error: Error): boolean
-  emit(event: 'jobCompleted', job: JobData, result: JobResponse<Record<string, unknown>>): boolean
-  on(event: 'globalBlock', listener: (blockType: GlobalBlockType, blockedDurationMs: number) => void): this
-  on(event: 'globalRestore', listener: (blockType: GlobalBlockType) => void): this
+  emit(event: 'jobCompleted', job: JobData, result: JobResponse<Record<string, unknown>>, metadata: {
+    startTimestamp: number,
+    endTimestamp: number,
+  }): boolean
+  on(event: 'globalBlock', listener: (blockType: GLOBAL_BLOCK_TYPE, blockedDurationMs: number) => void): this
+  on(event: 'globalRestore', listener: (blockType: GLOBAL_BLOCK_TYPE) => void): this
   on(event: 'jobError', listener: (err: Error, job: JobData) => void): this
   on(event: 'err', listener: (err: Error) => void): this
-  on(event: 'jobCompleted', listener: (job: JobData, result: JobResponse<Record<string, unknown>>) => void): this
+  on(event: 'jobCompleted', listener: (job: JobData, result: JobResponse<Record<string, unknown>>, metadata: {
+    startTimestamp: number,
+    endTimestamp: number
+  }) => void): this
 }
 
 /**
@@ -178,7 +184,10 @@ class RESTConsumer extends EventEmitter {
           state: 'success',
         }
 
-        this.emit('jobCompleted', data, response)
+        this.emit('jobCompleted', data, response, {
+          startTimestamp: message.properties.timestamp,
+          endTimestamp: new Date().getTime()
+        })
       } catch (err) {
         const message = (err as Error).message
         response = {

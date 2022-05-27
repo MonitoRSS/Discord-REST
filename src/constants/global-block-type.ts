@@ -1,4 +1,4 @@
-export enum GlobalBlockType {
+export enum GLOBAL_BLOCK_TYPE {
   /**
    * When the number of invalid requests threshold has been reached,
    * all requests are delayed by 10 minutes
