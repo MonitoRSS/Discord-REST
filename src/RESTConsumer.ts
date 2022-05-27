@@ -53,12 +53,14 @@ export interface JobResponseError {
 declare interface RESTConsumer {
   emit(event: 'globalBlock', blockType: GlobalBlockType, blockedDurationMs: number): boolean
   emit(event: 'globalRestore', blockType: GlobalBlockType): boolean
-  emit(event: 'requestError', error: Error, job: JobData): boolean
+  emit(event: 'jobError', error: Error, job: JobData): boolean
   emit(event: 'err', error: Error): boolean
+  emit(event: 'jobCompleted', job: JobData, result: JobResponse<Record<string, unknown>>): boolean
   on(event: 'globalBlock', listener: (blockType: GlobalBlockType, blockedDurationMs: number) => void): this
   on(event: 'globalRestore', listener: (blockType: GlobalBlockType) => void): this
-  on(event: 'requestError', listener: (err: Error, job: JobData) => void): this
+  on(event: 'jobError', listener: (err: Error, job: JobData) => void): this
   on(event: 'err', listener: (err: Error) => void): this
+  on(event: 'jobCompleted', listener: (job: JobData, result: JobResponse<Record<string, unknown>>) => void): this
 }
 
 /**
@@ -175,7 +177,8 @@ class RESTConsumer extends EventEmitter {
           ...await this.processJobData(data),
           state: 'success',
         }
-        
+
+        this.emit('jobCompleted', data, response)
       } catch (err) {
         const message = (err as Error).message
         response = {
@@ -183,16 +186,21 @@ class RESTConsumer extends EventEmitter {
           message
         }
         if (err instanceof RequestTimeoutError) {
-          this.emit('requestError', err, data)
+          this.emit('jobError', err, data)
         } else {
-          this.emit('requestError', new MessageProcessingError(message), data)
+          this.emit('jobError', new MessageProcessingError(message), data)
         }
       }
 
+
       if (data.rpc) {
-        await channel.sendToQueue(message.properties.replyTo, Buffer.from(JSON.stringify(response)), {
-          correlationId: message.properties.correlationId,
-        })
+        try {
+          await channel.sendToQueue(message.properties.replyTo, Buffer.from(JSON.stringify(response)), {
+            correlationId: message.properties.correlationId,
+          })
+        } catch (err) {
+          this.emit('err', err as Error)
+        }
       }
 
       channel.ack(message)
