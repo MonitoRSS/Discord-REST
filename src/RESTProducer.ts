@@ -80,7 +80,7 @@ class RESTProducer {
       options,
       meta,
       rpc: false,
-      startTimestamp: dayjs().unix()
+      startTimestamp: dayjs().valueOf()
     }
 
     await this.rabbitmq.channel.sendToQueue(
@@ -125,7 +125,7 @@ class RESTProducer {
       options,
       meta,
       rpc: true,
-      startTimestamp: dayjs().utc().unix()
+      startTimestamp: dayjs().utc().valueOf()
     }
 
     const replyQueue = await rabbitmq.channel.assertQueue(getQueueRPCReplyName(this.options.clientId), {
