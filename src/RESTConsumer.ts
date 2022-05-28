@@ -38,7 +38,8 @@ const jobDataSchema = yup.object().required().shape({
   options: yup.object<yup.AnyObject, RequestOptions>().required(),
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   meta: yup.object<yup.AnyObject, Record<string, any>>().shape({}).optional(),
-  rpc: yup.boolean().optional()
+  rpc: yup.boolean().optional(),
+  startTimestamp: yup.number().required()
 })
 
 export type JobData = yup.InferType<typeof jobDataSchema>

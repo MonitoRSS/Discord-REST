@@ -3,6 +3,10 @@ import { nanoid } from 'nanoid'
 import amqp from 'amqplib'
 import { getQueueConfig, getQueueName } from './constants/queue-configs';
 import { QUEUE_PRIORITY } from './constants/queue-priority';
+import dayjs from 'dayjs'
+import utc from 'dayjs/plugin/utc'
+
+dayjs.extend(utc)
 
 interface Options {
   clientId: string;
@@ -76,6 +80,7 @@ class RESTProducer {
       options,
       meta,
       rpc: false,
+      startTimestamp: dayjs().unix()
     }
 
     await this.rabbitmq.channel.sendToQueue(
@@ -120,6 +125,7 @@ class RESTProducer {
       options,
       meta,
       rpc: true,
+      startTimestamp: dayjs().utc().unix()
     }
 
     const replyQueue = await rabbitmq.channel.assertQueue('', {
