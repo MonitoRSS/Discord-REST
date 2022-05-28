@@ -112,6 +112,15 @@ class RESTConsumer extends EventEmitter {
     })
 
     this.handler.on('globalBlock', (blockType, durationMs) => {
+      if (blockType !== GLOBAL_BLOCK_TYPE.CLOUDFLARE_RATE_LIMIT) {
+        /**
+         * We should only stop the consumer if the global block is a cloudflare rate limit. Cloudflare
+         * bans are IP-based, and we can switch to another consumer in that case. Other rate limits
+         * can be gracefully handled after waiting a shorter amount of time within the same consumer.
+         */
+        return;
+      }
+
       this.emit('globalBlock', blockType, durationMs)
       this.stopConsumer()
     })
