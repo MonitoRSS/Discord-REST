@@ -18,3 +18,5 @@ export {
   QUEUE_PRIORITY,
   GLOBAL_BLOCK_TYPE,
 }
+
+export * from './errors'

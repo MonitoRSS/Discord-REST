@@ -172,7 +172,7 @@ class RESTConsumer extends EventEmitter {
       try {
         data = await this.validateMessage(message)
       } catch (err) {
-        this.emit('err', new MessageParseError((err as Error).message))
+        this.emit('err', new MessageParseError(`Message validation failed: ${(err as Error).message}. Ensure job schemas of both producer and consumer are compatible with each other. Ignoring job execution.`))
         channel.ack(message)
 
         return;
@@ -201,9 +201,9 @@ class RESTConsumer extends EventEmitter {
           message
         }
         if (err instanceof RequestTimeoutError) {
-          this.emit('jobError', err, data)
+          this.emit('jobError', new RequestTimeoutError(`Job request timed out (${err.message})`), data)
         } else {
-          this.emit('jobError', new MessageProcessingError(message), data)
+          this.emit('jobError', new MessageProcessingError(`Failed to process job (${message})`), data)
         }
       }
 
@@ -214,7 +214,7 @@ class RESTConsumer extends EventEmitter {
             correlationId: message.properties.correlationId,
           })
         } catch (err) {
-          this.emit('err', err as Error)
+          this.emit('err', new Error(`Failed to send RPC response message: ${(err as Error).message}`))
         }
       }
 
@@ -226,11 +226,11 @@ class RESTConsumer extends EventEmitter {
 
   private async stopConsumer() {
     if (!this.rabbitmq) {
-      throw new Error('RabbitMQ not initialized')
+      throw new Error('RabbitMQ not initialized. Initialize the consumer first.')
     }
 
     if (!this.rabbitmq.consumerTag) {
-      throw new Error('Consumer not started')
+      throw new Error('Consumer not started. Start the cosumer first.')
     }
 
     await this.rabbitmq.channel.cancel(this.rabbitmq.consumerTag)
