@@ -5,6 +5,9 @@ import * as yup from 'yup'
 import amqp from 'amqplib'
 import { getQueueConfig, getQueueName } from "./constants/queue-configs";
 import { GLOBAL_BLOCK_TYPE } from "./constants/global-block-type";
+import dayjs from "dayjs";
+import utc from 'dayjs/plugin/utc'
+dayjs.extend(utc)
 
 interface ConsumerOptions {
   /**
@@ -61,18 +64,12 @@ declare interface RESTConsumer {
   emit(event: 'globalRestore', blockType: GLOBAL_BLOCK_TYPE): boolean
   emit(event: 'jobError', error: Error, job: JobData): boolean
   emit(event: 'err', error: Error): boolean
-  emit(event: 'jobCompleted', job: JobData, result: JobResponse<Record<string, unknown>>, metadata: {
-    startTimestamp: number,
-    endTimestamp: number,
-  }): boolean
+  emit(event: 'jobCompleted', job: JobData, result: JobResponse<Record<string, unknown>>): boolean
   on(event: 'globalBlock', listener: (blockType: GLOBAL_BLOCK_TYPE, blockedDurationMs: number) => void): this
   on(event: 'globalRestore', listener: (blockType: GLOBAL_BLOCK_TYPE) => void): this
   on(event: 'jobError', listener: (err: Error, job: JobData) => void): this
   on(event: 'err', listener: (err: Error) => void): this
-  on(event: 'jobCompleted', listener: (job: JobData, result: JobResponse<Record<string, unknown>>, metadata: {
-    startTimestamp: number,
-    endTimestamp: number
-  }) => void): this
+  on(event: 'jobCompleted', listener: (job: JobData, result: JobResponse<Record<string, unknown>>) => void): this
 }
 
 /**
@@ -196,10 +193,7 @@ class RESTConsumer extends EventEmitter {
           state: 'success',
         }
 
-        this.emit('jobCompleted', data, response, {
-          startTimestamp: message.properties.timestamp,
-          endTimestamp: new Date().getTime()
-        })
+        this.emit('jobCompleted', data, response)
       } catch (err) {
         const message = (err as Error).message
         response = {
