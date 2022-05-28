@@ -1,7 +1,7 @@
 import { JobData, JobResponse, JobResponseError } from './RESTConsumer'
 import { nanoid } from 'nanoid'
 import amqp from 'amqplib'
-import { getQueueConfig, getQueueName } from './constants/queue-configs';
+import { getQueueConfig, getQueueName, getQueueRPCReplyName } from './constants/queue-configs';
 import { QUEUE_PRIORITY } from './constants/queue-priority';
 import dayjs from 'dayjs'
 import utc from 'dayjs/plugin/utc'
@@ -128,7 +128,7 @@ class RESTProducer {
       startTimestamp: dayjs().utc().unix()
     }
 
-    const replyQueue = await rabbitmq.channel.assertQueue('', {
+    const replyQueue = await rabbitmq.channel.assertQueue(getQueueRPCReplyName(this.options.clientId), {
       autoDelete: true,
       exclusive: true,
       durable: false,

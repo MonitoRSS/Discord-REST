@@ -8,6 +8,14 @@ export const getQueueName = (clientId: string): string => {
   return `discord-api-${clientId}`
 }
 
+export const getQueueRPCReplyName = (clientId: string): string => {
+  if (process.env.NODE_ENV === 'test') {
+    return `test:discord-api-reply-${clientId}`
+  }
+  
+  return `discord-api-reply-${clientId}`
+}
+
 export const getQueueConfig = (options?: {
   autoDeleteQueues: boolean
 }): amqp.Options.AssertQueue => {
