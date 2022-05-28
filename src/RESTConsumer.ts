@@ -152,11 +152,13 @@ class RESTConsumer extends EventEmitter {
 
   private async startConsumer() {
     if (!this.rabbitmq) {
-      throw new Error('RabbitMQ not initialized')
+      throw new Error('Cannot start consumer when consumer is not initialized')
     }
 
     if (this.rabbitmq.consumerTag) {
-      throw new Error('Consumer already started')
+      // The consumer is already active - there may be conditions where multiple blocks are happening
+
+      return
     }
     
     const channel = this.rabbitmq.channel
@@ -230,7 +232,9 @@ class RESTConsumer extends EventEmitter {
     }
 
     if (!this.rabbitmq.consumerTag) {
-      throw new Error('Consumer not started. Start the cosumer first.')
+      // The consumer is already stopped
+
+      return
     }
 
     await this.rabbitmq.channel.cancel(this.rabbitmq.consumerTag)
