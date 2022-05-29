@@ -212,11 +212,7 @@ class RESTConsumer extends EventEmitter {
           state: 'error',
           message
         }
-        if (err instanceof RequestTimeoutError) {
-          this.emit('jobError', new RequestTimeoutError(`Job request timed out (${err.message})`), data)
-        } else {
-          this.emit('jobError', new MessageProcessingError(`Failed to process job (${message})`), data)
-        }
+        this.emit('jobError', new MessageProcessingError(`Failed to process job (${message})`), data)
       }
 
 
@@ -259,11 +255,6 @@ class RESTConsumer extends EventEmitter {
 
     return new Promise<{status: number, body: Record<string, never>}>(async (resolve, reject) => {
       try {
-        // Timeout after 4 minutes
-        const timeout = setTimeout(() => {
-          reject(new RequestTimeoutError())
-        }, 1000 * 60 * 4)
-
         const res = await handler.fetch(data.route, {
           ...data.options,
           headers: {
@@ -275,9 +266,6 @@ class RESTConsumer extends EventEmitter {
         })
 
         const parsedData = await this.handleJobFetchResponse(res)
-
-        clearTimeout(timeout)
-
         resolve(parsedData)
       } catch (err) {
         reject(err)
