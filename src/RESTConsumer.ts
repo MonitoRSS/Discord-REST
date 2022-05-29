@@ -7,6 +7,7 @@ import { getQueueConfig, getQueueName } from "./constants/queue-configs";
 import { GLOBAL_BLOCK_TYPE } from "./constants/global-block-type";
 import dayjs from "dayjs";
 import utc from 'dayjs/plugin/utc'
+import { FetchResponse } from "./types/FetchResponse";
 dayjs.extend(utc)
 
 interface ConsumerOptions {
@@ -284,14 +285,14 @@ class RESTConsumer extends EventEmitter {
     })
   }
 
-  private async handleJobFetchResponse(res: globalThis.Response) {
+  private async handleJobFetchResponse(res: FetchResponse) {
     // A custom object be returned here to provide a serializable object to store
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let body: any
 
     if (res.status === 204) {
       body = null
-    } else if (res.headers.get('Content-Type')?.includes('application/json')) {
+    } else if (res.headers['content-type']?.includes('application/json')) {
       body = await res.json()
     } else {
       body = await res.text()

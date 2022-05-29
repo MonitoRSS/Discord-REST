@@ -2,6 +2,8 @@ import { EventEmitter } from 'events'
 import APIRequest from './APIRequest';
 import { Debugger } from 'debug';
 import { createBucketDebug } from './util/debug';
+import { IncomingHttpHeaders } from 'http';
+import { FetchResponse } from './types/FetchResponse';
 
 declare interface Bucket {
   emit(event: 'recognizeURLBucket', url: string, bucketId: string): boolean
@@ -63,16 +65,16 @@ class Bucket extends EventEmitter {
   static get constants () {
     return {
       // The bucket id encountered
-      RATELIMIT_BUCKET: 'X-RateLimit-Bucket',
+      RATELIMIT_BUCKET: 'x-ratelimit-bucket',
       // Number of remaining requests for this bucket
-      RATELIMIT_REMAINING: 'X-RateLimit-Remaining',
+      RATELIMIT_REMAINING: 'x-ratelimit-remaining',
       // Seconds to wait until the limit resets
-      RATELIMIT_RESET_AFTER: 'X-RateLimit-Reset-After',
+      RATELIMIT_RESET_AFTER: 'x-ratelimit-reset-after',
       // If the encountered route has hit a global limit
-      RATELIMIT_GLOBAL: 'X-RateLimit-Global',
+      RATELIMIT_GLOBAL: 'x-ratelimit-global',
       // Seconds to wait until global limit is reset
       // Only available when a global limit is hit
-      RETRY_AFTER: 'Retry-After'
+      RETRY_AFTER: 'retry-after'
     }
   }
   
@@ -107,11 +109,11 @@ class Bucket extends EventEmitter {
   /**
    * If a bucket limit is available within these headers from request headers
    */
-  static hasBucketLimits (headers: globalThis.Headers): boolean {
+  static hasBucketLimits (headers: IncomingHttpHeaders): boolean {
     const {
       RATELIMIT_BUCKET
     } = Bucket.constants
-    return !!headers.get(RATELIMIT_BUCKET)
+    return !!headers[RATELIMIT_BUCKET]
   }
 
   /**
@@ -124,15 +126,15 @@ class Bucket extends EventEmitter {
    * 
    * @returns {number} Milliseconds
    */
-  static getBucketBlockDurationMs (headers: globalThis.Headers, ignoreRemaining: boolean): number {
+  static getBucketBlockDurationMs (headers: IncomingHttpHeaders, ignoreRemaining: boolean): number {
     const {
       RATELIMIT_REMAINING,
       RATELIMIT_RESET_AFTER
     } = Bucket.constants
-    const rateLimitRemaining = Number(headers.get(RATELIMIT_REMAINING))
+    const rateLimitRemaining = Number(headers[RATELIMIT_REMAINING])
     if (rateLimitRemaining === 0 || ignoreRemaining) {
       // Reset-After contains seconds
-      const resetAfterMs = Number(headers.get(RATELIMIT_RESET_AFTER)) * 1000
+      const resetAfterMs = Number(headers[RATELIMIT_RESET_AFTER]) * 1000
       if (isNaN(resetAfterMs)) {
         return -1
       } else {
@@ -145,11 +147,11 @@ class Bucket extends EventEmitter {
   /**
    * If the headers indicate global blockage from request headers
    */
-  static isGloballyBlocked (headers: globalThis.Headers): boolean {
+  static isGloballyBlocked (headers: IncomingHttpHeaders): boolean {
     const {
       RATELIMIT_GLOBAL
     } = Bucket.constants
-    return !!headers.get(RATELIMIT_GLOBAL)
+    return !!headers[RATELIMIT_GLOBAL]
   }
 
   /**
@@ -159,11 +161,11 @@ class Bucket extends EventEmitter {
    * 
    * @returns {number} Milliseconds.
    */
-  static getGlobalBlockDurationMs (headers: globalThis.Headers): number {
+  static getGlobalBlockDurationMs (headers: IncomingHttpHeaders): number {
     const {
       RETRY_AFTER
     } = Bucket.constants
-    const retryAfterMs = Number(headers.get(RETRY_AFTER))
+    const retryAfterMs = Number(headers[RETRY_AFTER])
     if (!isNaN(retryAfterMs)) {
       return retryAfterMs
     }
@@ -177,7 +179,7 @@ class Bucket extends EventEmitter {
    * 
    * @returns {number} Milliseconds
    */
-  static getBlockedDuration (headers: globalThis.Headers, ignoreRemaining = false): number {
+  static getBlockedDuration (headers: IncomingHttpHeaders, ignoreRemaining = false): number {
     // Global limits take priority
     if (this.isGloballyBlocked(headers)) {
       return this.getGlobalBlockDurationMs(headers)
@@ -195,14 +197,14 @@ class Bucket extends EventEmitter {
    * API requests by default are allocated to temporary buckets.
    * Recognizing it will de-allocate it from the temporary buckets.
    */
-  private recognizeURLBucket (url: string, headers: globalThis.Headers): void {
+  private recognizeURLBucket (url: string, headers: IncomingHttpHeaders): void {
     if (!Bucket.hasBucketLimits(headers)) {
       return
     }
     const {
       RATELIMIT_BUCKET
     } = Bucket.constants
-    const rateLimitBucket = headers.get(RATELIMIT_BUCKET) || ''
+    const rateLimitBucket = String(headers[RATELIMIT_BUCKET] || '')
     const bucketID = Bucket.resolveBucketId(url, rateLimitBucket)
     this.emit('recognizeURLBucket', url, bucketID)
   }
@@ -240,7 +242,7 @@ class Bucket extends EventEmitter {
   /**
    * Delay the execution and resolution of an API request
    */
-  private async delayExecution (apiRequest: APIRequest): Promise<globalThis.Response> {
+  private async delayExecution (apiRequest: APIRequest): Promise<FetchResponse> {
     const now = new Date().getTime()
     const future = (this.blockedUntil as Date).getTime()
     return new Promise((resolve) => {
@@ -270,7 +272,7 @@ class Bucket extends EventEmitter {
    * 
    * @returns Node fetch response
    */
-  public enqueue (apiRequest: APIRequest): Promise<globalThis.Response> {
+  public enqueue (apiRequest: APIRequest): Promise<FetchResponse> {
     this.debug(`Enqueuing request ${apiRequest.toString()}`)
     /**
      * Access the last one in the queue *before* we enter the
@@ -311,7 +313,7 @@ class Bucket extends EventEmitter {
   /**
    * Execute a APIRequest by fetching it
    */
-  private async execute (apiRequest: APIRequest): Promise<globalThis.Response> {
+  private async execute (apiRequest: APIRequest): Promise<FetchResponse> {
     if (this.blockedUntil) {
       this.debug(`Delaying execution until ${this.blockedUntil} for ${apiRequest.toString()}`)
       return this.delayExecution(apiRequest)
@@ -340,7 +342,7 @@ class Bucket extends EventEmitter {
   /**
    * Handle 429 status code response (rate limited)
    */
-  private async handle429Response (apiRequest: APIRequest, res: globalThis.Response): Promise<globalThis.Response> {
+  private async handle429Response (apiRequest: APIRequest, res: FetchResponse): Promise<FetchResponse> {
     const { headers } = res
     let blockedDurationMs = Bucket.getBlockedDuration(headers, true)
     this.debug(`429 hit for ${apiRequest.toString()}`)
@@ -370,7 +372,7 @@ class Bucket extends EventEmitter {
   /**
    * Handle any responses that is not a rate limit block
    */
-  private async handleResponse (apiRequest: APIRequest, res: globalThis.Response): Promise<globalThis.Response> {
+  private async handleResponse (apiRequest: APIRequest, res: FetchResponse): Promise<FetchResponse> {
     this.debug(`Non-429 response for ${apiRequest.toString()}`)
     const blockedDurationMs = Bucket.getBlockedDuration(res.headers)
     if (blockedDurationMs !== -1) {

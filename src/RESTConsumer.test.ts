@@ -19,8 +19,8 @@ describe('RESTConsumer', () => {
     })
 
     it.each([
-      {route: 'route', options: {headers: {}}, meta: {}},
-      {id: 'id', options: {headers: {}}, meta: {}},
+      {route: 'route', options: {headers: {}}, meta: {}, startTimestamp: 1},
+      {id: 'id', options: {headers: {}}, meta: {}, startTimestamp: 1},
     ])('should throw an error if the json does not match the expected shape %o', async (json) => {
       const message = {
         content: {
@@ -32,11 +32,11 @@ describe('RESTConsumer', () => {
     })
 
     it.each([
-      {id: 'id', route: 'route', options: {headers: {}}, meta: {}, body: {}, rpc: false},
-      {id: 'id', route: 'route', options: {headers: {}}, meta: {}, body: {}},
+      {id: 'id', route: 'route', options: {headers: {}}, meta: {}, body: {}, rpc: false, startTimestamp: 1},
+      {id: 'id', route: 'route', options: {headers: {}}, meta: {}, body: {}, startTimestamp: 1},
       {id: 'id', route: 'route', options: {headers: {
         random: 'header'
-      }}, meta: {}, body: {}, rpc: true},
+      }, startTimestamp: 1}, meta: {}, body: {}, rpc: true, startTimestamp: 1},
 
     ])('should return the job data if the json matches the expected shape', async (json) => {
       const message = {

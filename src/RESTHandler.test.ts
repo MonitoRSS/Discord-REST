@@ -2,6 +2,7 @@ import APIRequest from "./APIRequest"
 import Bucket from "./Bucket"
 import RESTHandler from "./RESTHandler"
 import { mocked } from 'ts-jest/utils'
+import { FetchResponse } from "./types/FetchResponse"
 
 jest.mock('./APIRequest')
 
@@ -9,8 +10,8 @@ const APIRequestMocked = mocked(APIRequest)
 
 const okResponse = {
   status: 200,
-  headers: new Map()
-} as unknown as Response
+  headers: {}
+} as FetchResponse
 
 async function flushPromises(): Promise<void> {
   return new Promise(resolve => {
@@ -32,11 +33,11 @@ describe('RESTHandler', () => {
       const globalBlockDuration = '99999999'
       const firstRequestResponse = {
         status: 429,
-        headers: new Map([
-          [Bucket.constants.RATELIMIT_GLOBAL, 'true'],
-          [Bucket.constants.RETRY_AFTER, globalBlockDuration]
-        ])
-      } as unknown as Response
+        headers: {
+          [Bucket.constants.RATELIMIT_GLOBAL]: 'true',
+          [Bucket.constants.RETRY_AFTER]: globalBlockDuration
+        }
+      } as FetchResponse
       jest.spyOn(APIRequest.prototype, 'execute')
         .mockResolvedValueOnce(firstRequestResponse)
         .mockResolvedValue(okResponse)

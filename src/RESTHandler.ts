@@ -4,6 +4,8 @@ import { EventEmitter } from "events";
 import PQueue, { DefaultAddOptions, Options } from 'p-queue'
 import PriorityQueue from "p-queue/dist/priority-queue";
 import { GLOBAL_BLOCK_TYPE } from "./constants/global-block-type";
+import { RequestOptions } from "./types/RequestOptions";
+import { FetchResponse } from "./types/FetchResponse";
 
 export type RESTHandlerOptions = {
   /**
@@ -365,10 +367,11 @@ class RESTHandler extends EventEmitter {
    * @param options node-fetch options
    * @returns node-fetch response
    */
-  public async fetch (route: string, options: RequestInit): Promise<Response> {
+  public async fetch (route: string, options: RequestOptions): Promise<FetchResponse> {
     const { requestTimeoutRetries } = this.userOptions
-    const apiRequest = new APIRequest(route, options, {
+    const apiRequest = new APIRequest(route, {
       maxRetries: requestTimeoutRetries,
+      ...options,
     })
     const url = apiRequest.route
     const bucket = this.getBucketForUrl(url)

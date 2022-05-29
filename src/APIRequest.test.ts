@@ -1,16 +1,27 @@
 import APIRequest from './APIRequest'
-import nock from 'nock'
-
+import { Interceptable, MockAgent, setGlobalDispatcher } from 'undici'
 
 describe('APIRequest', () => {
-  const dummyUrl = 'https://example.com'
+  const dummyHost = 'https://example.com'
+  const dummyEndpoint = '/messages'
+  const dummyUrl = dummyHost + dummyEndpoint
+  let client: Interceptable
+  const interceptDetails = {
+    path: dummyEndpoint,
+    method: 'GET',
+  }
 
   beforeEach(() => {
-    nock.cleanAll()
+    const agent = new MockAgent()
+    agent.disableNetConnect()
+    setGlobalDispatcher(agent)
+    client = agent.get(dummyHost)
   })
+
   afterEach(() => {
     APIRequest.lastId = 0
     jest.resetAllMocks()
+    client.destroy()
   })
   describe('constructor', () => {
     it('auto-increments the id', async () => {
@@ -29,9 +40,7 @@ describe('APIRequest', () => {
         foo: 'bar'
       } as unknown as Response
       
-      nock(dummyUrl)
-        .get('/')
-        .reply(200, response)
+      client.intercept(interceptDetails).reply(200, response)
 
       const apiRequest = new APIRequest(dummyUrl)
       const result = await apiRequest.execute()
@@ -41,51 +50,93 @@ describe('APIRequest', () => {
     it('throws the same error that fetch throws', async () => {
       const fetchError = new Error('fetch error example')
 
-      nock(dummyUrl)
-        .get('/')
-        .replyWithError(fetchError)
+      client.intercept(interceptDetails).replyWithError(fetchError)
 
-      const apiRequest = new APIRequest(dummyUrl)
+      const apiRequest = new APIRequest(dummyUrl, {
+        maxRetries: 0
+      })
       await expect(apiRequest.execute())
-        .rejects.toThrow()
+        .rejects.toThrow(fetchError)
     })
 
-    it('retries 3 times on 422 code', async () => {
-      const nockScope = nock(dummyUrl)
-        .get('/')
-        .reply(422, {})
-        .get('/')
-        .reply(422, {})
-        .get('/')
-        .reply(422, {})
-        .get('/')
-        .reply(422, {})
+    it('retries correctly on fetch error', async () => {
+      const fetchError = new Error('fetch error example')
 
-      const apiRequest = new APIRequest(dummyUrl)
+      client.intercept(interceptDetails).replyWithError(fetchError)
+
+      const apiRequest = new APIRequest(dummyUrl, {
+        maxRetries: 3
+      })
+      const sendFetchSpy = jest.spyOn(apiRequest, 'sendFetch')
+      await expect(apiRequest.execute({
+        baseAttemptDelay: 1
+      })).rejects.toThrow()
+
+      expect(sendFetchSpy).toHaveBeenCalledTimes(4)
+    })
+
+    it('retries correctly times on 422 code', async () => {
+      client.intercept(interceptDetails).reply(422, {})
+      client.intercept(interceptDetails).reply(422, {})
+      client.intercept(interceptDetails).reply(422, {})
+      client.intercept(interceptDetails).reply(422, {})
+
+      const apiRequest = new APIRequest(dummyUrl, {
+        maxRetries: 3
+      })
+      const sendFetchSpy = jest.spyOn(apiRequest, 'sendFetch')
       await apiRequest.execute({
         baseAttemptDelay: 1
       })
 
-      expect(nockScope.isDone()).toBe(true)
+      expect(sendFetchSpy).toHaveBeenCalledTimes(4)
     })
 
-    it('retries 3 times on >= 500 codes', async () => {
-      const nockScope = nock(dummyUrl)
-        .get('/')
-        .reply(500, {})
-        .get('/')
-        .reply(502, {})
-        .get('/')
-        .reply(501, {})
-        .get('/')
-        .reply(500, {})
+    it('returns with a status of 422 and does not throw', async   () => {
+      client.intercept(interceptDetails).reply(422, {})
+      client.intercept(interceptDetails).reply(422, {})
+      client.intercept(interceptDetails).reply(422, {})
 
-      const apiRequest = new APIRequest(dummyUrl)
-      await apiRequest.execute({
+      const apiRequest = new APIRequest(dummyUrl, {
+        maxRetries: 2
+      })
+
+      const { status } = await apiRequest.execute({
         baseAttemptDelay: 1
       })
 
-      expect(nockScope.isDone()).toBe(true)
+      expect(status).toEqual(422)
+    })
+
+    it('retries correctly on >= 500 codes', async () => {
+      client.intercept(interceptDetails).reply(500, {})
+      client.intercept(interceptDetails).reply(501, {})
+      client.intercept(interceptDetails).reply(503, {})
+      client.intercept(interceptDetails).reply(504, {})
+
+      const apiRequest = new APIRequest(dummyUrl, {
+        maxRetries: 3,
+      })
+      const sendFetchSpy = jest.spyOn(apiRequest, 'sendFetch')
+      await apiRequest.execute({
+        baseAttemptDelay: 1,
+      })
+
+      expect(sendFetchSpy).toHaveBeenCalledTimes(4)
+    })
+
+    it('returns with a status of 500 and does not throw', async   () => {
+      client.intercept(interceptDetails).reply(500, {}).persist()
+
+      const apiRequest = new APIRequest(dummyUrl, {
+        maxRetries: 2
+      })
+
+      const { status } = await apiRequest.execute({
+        baseAttemptDelay: 1
+      })
+
+      expect(status).toEqual(500)
     })
   })
   describe('toString', () => {

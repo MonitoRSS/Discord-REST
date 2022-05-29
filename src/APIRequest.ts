@@ -1,13 +1,15 @@
-import 'isomorphic-fetch'
-import fetchRetry from 'fetch-retry';
-
-const fetchWithRetry = fetchRetry(fetch);
+import { request } from 'undici'
+import { FetchResponse } from './types/FetchResponse';
+import retry from 'retry'
 
 type RequestOptions = {
   /**
-   * Maximum number of retries before rejecting
+   * Maximum number of retries before rejecting. By default, 10.
    */
   maxRetries?: number
+  method?: 'POST'|'GET'|'PATCH'|'PUT'
+  body?: string
+  headers?: Record<string, string>
 }
 
 class APIRequest {
@@ -34,9 +36,8 @@ class APIRequest {
   private fetchSuccess: boolean|undefined = undefined
 
 
-  constructor (route: string, fetchOptions?: RequestInit, requestOptions?: RequestOptions) {
+  constructor (route: string, private readonly requestOptions?: RequestOptions) {
     this.route = route
-    this.options = fetchOptions
     this.id = ++APIRequest.lastId
   }
 
@@ -45,37 +46,63 @@ class APIRequest {
    */
   async execute (options?: {
     baseAttemptDelay?: number,
-  }): Promise<Response> {
-    try {
-      const res = await fetchWithRetry(this.route, {
-        ...this.options,
-        retryDelay: function(attempt: number) {
-          const baseAttemptDelay = options?.baseAttemptDelay || 1500
-          
-          return Math.pow(2, attempt) * baseAttemptDelay; // 1500, 3000, 6000, 12000
-        },
-        retryOn: function(attempt, error, response) {
-          if (attempt >= 3) {
-            return false;
+  }): Promise<FetchResponse> {
+    const maxRetries = this.requestOptions?.maxRetries ?? 10
+    const operation = retry.operation({
+      minTimeout: options?.baseAttemptDelay,
+      retries: maxRetries,
+    });
+
+    return new Promise<FetchResponse>((resolve, reject) => {
+      operation.attempt(async () => {
+        try {
+          const res = await this.sendFetch()
+
+          let operationError: Error | undefined = undefined;
+          if (res.status === 422 || res.status >= 500) {
+            operationError = new Error(`Bad status code (${res.status})`)
           }
 
-          const status = response?.status;
-
-          if (error || !status) {
-            return false
+          if (!operation.retry(operationError)) {
+            return resolve(res)
           }
 
-          if (status === 422 || status >= 500) {
-            return true;
+        } catch (err) {
+          if (!operation.retry(err as Error)) {
+            reject(err)
           }
-
-          return false
         }
       })
+    })
+  }
+
+  async sendFetch(): Promise<FetchResponse> {
+    try {
+      const res = await request(this.route, {
+        method: this.requestOptions?.method || 'GET',
+        body: this.requestOptions?.body,
+        headers: this.requestOptions?.headers,
+        bodyTimeout: 1000 * 60,
+        headersTimeout: 1000 * 60,
+        maxRedirections: 10,
+      })
+
+      // if (res.statusCode === 422) {
+        // throw new Error(`Rate limited (422 status code)`)
+      // }
+
+      // if (res.statusCode >= 500) {
+      //   throw new Error(`Discord internal error (${res.statusCode})`)
+      // }
 
       this.fetchSuccess = true
 
-      return res
+      return {
+        json: async () => res.body.json(),
+        text: async () => res.body.text(),
+        headers: res.headers,
+        status: res.statusCode
+      }
     }
     catch (e) { 
       this.fetchSuccess = false

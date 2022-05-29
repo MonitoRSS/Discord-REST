@@ -56,81 +56,79 @@ describe('Bucket', () => {
   })
   describe('static hasBucketLimits', () => {
     it('returns true correctly', () => {
-      const withBucketHeaders = new Map([[Bucket.constants.RATELIMIT_BUCKET, 'bucketheader']])
-      const result1 = Bucket.hasBucketLimits(withBucketHeaders as unknown as globalThis.Headers)
+      const withBucketHeaders = {[Bucket.constants.RATELIMIT_BUCKET]: 'bucketheader'}
+      const result1 = Bucket.hasBucketLimits(withBucketHeaders)
       expect(result1).toEqual(true)
     })
     it('returns false correctly', () => {
-      const withoutBucketHeaders = new Map()
-      const result2 = Bucket.hasBucketLimits(withoutBucketHeaders as unknown as globalThis.Headers)
+      const result2 = Bucket.hasBucketLimits({})
       expect(result2).toEqual(false)
     })
   })
   describe('static getBucketBlockDurationMs', () => {
     it('returns the bucket block duration in ms', () => {
       const blockDurationSeconds = '3'
-      const headers = new Map([
-        [Bucket.constants.RATELIMIT_REMAINING, '0'],
-        [Bucket.constants.RATELIMIT_RESET_AFTER, blockDurationSeconds]
-      ]) as unknown as globalThis.Headers
+      const headers = {
+        [Bucket.constants.RATELIMIT_REMAINING]: '0',
+        [Bucket.constants.RATELIMIT_RESET_AFTER]: blockDurationSeconds
+      }
       const result = Bucket.getBucketBlockDurationMs(headers, false)
       expect(result).toEqual(Number(blockDurationSeconds) * 1e3)
     })
     it('returns -1 if there are remaining requests that can be done', () => {
-      const headers = new Map([
-        [Bucket.constants.RATELIMIT_REMAINING, '2'],
-        [Bucket.constants.RATELIMIT_RESET_AFTER, '3'] // This should be ignored
-      ]) as unknown as globalThis.Headers
+      const headers = {
+        [Bucket.constants.RATELIMIT_REMAINING]: '2',
+        [Bucket.constants.RATELIMIT_RESET_AFTER]: '3', // This should be ignored
+      }
       const result = Bucket.getBucketBlockDurationMs(headers, false)
       expect(result).toEqual(-1)
     })
     it('returns the block duration in ms if we ignore remaining', () => {
       const blockDurationSeconds = '3'
-      const headers = new Map([
-        [Bucket.constants.RATELIMIT_REMAINING, '2'],
-        [Bucket.constants.RATELIMIT_RESET_AFTER, blockDurationSeconds] // This should be ignored
-      ]) as unknown as globalThis.Headers
+      const headers = {
+        [Bucket.constants.RATELIMIT_REMAINING]: '2',
+        [Bucket.constants.RATELIMIT_RESET_AFTER]: blockDurationSeconds // This should be ignored
+      }
       const result = Bucket.getBucketBlockDurationMs(headers, true)
       expect(result).toEqual(Number(blockDurationSeconds) * 1e3)
     })
     it('returns -1 if the header cannot be parsed as a number', () => {
       const blockDurationSeconds = 'abc'
-      const headers = new Map([
-        [Bucket.constants.RATELIMIT_REMAINING, 'def'],
-        [Bucket.constants.RATELIMIT_RESET_AFTER, blockDurationSeconds]
-      ]) as unknown as globalThis.Headers
+      const headers = {
+        [Bucket.constants.RATELIMIT_REMAINING]: 'def',
+        [Bucket.constants.RATELIMIT_RESET_AFTER]: blockDurationSeconds
+      }
       const result = Bucket.getBucketBlockDurationMs(headers, false)
       expect(result).toEqual(-1)
     })
   })
   describe('static isGloballyBlocked', () => {
     it('returns true correctly', () => {
-      const headers = new Map([
-        [Bucket.constants.RATELIMIT_GLOBAL, 'true']
-      ]) as unknown as globalThis.Headers
+      const headers = {
+        [Bucket.constants.RATELIMIT_GLOBAL]: 'true',
+      }
       const result = Bucket.isGloballyBlocked(headers)
       expect(result).toEqual(true)
     })
     it('returns false correctly', () => {
-      const headers = new Map() as unknown as globalThis.Headers
-      const result = Bucket.isGloballyBlocked(headers)
+      const result = Bucket.isGloballyBlocked({})
       expect(result).toEqual(false)
     })
   })
   describe('static getGlobalBlockDurationMs', () => {
     it('returns the retry after header number', () => {
       const retryAfterMs = '2000'
-      const headers = new Map([
-        [Bucket.constants.RETRY_AFTER, retryAfterMs]
-      ]) as unknown as globalThis.Headers
+      const headers = {
+        [Bucket.constants.RETRY_AFTER]: retryAfterMs,
+      }
       const result = Bucket.getGlobalBlockDurationMs(headers)
       expect(result).toEqual(Number(retryAfterMs))
     })
     it('returns -1 if try after header is not a number', () => {
       const retryAfterMs = 'abc'
-      const headers = new Map([
-        [Bucket.constants.RETRY_AFTER, retryAfterMs]
-      ]) as unknown as globalThis.Headers
+      const headers = {
+        [Bucket.constants.RETRY_AFTER]: retryAfterMs,
+      }
       const result = Bucket.getGlobalBlockDurationMs(headers)
       expect(result).toEqual(-1)
     })
@@ -144,7 +142,7 @@ describe('Bucket', () => {
         .mockReturnValue(globalBlockDuration)
       jest.spyOn(Bucket, 'hasBucketLimits')
         .mockReturnValue(false)
-      const result = Bucket.getBlockedDuration(new Map() as unknown as globalThis.Headers)
+      const result = Bucket.getBlockedDuration({})
       expect(result).toEqual(globalBlockDuration)
     })
     it('returns the bucket block duration if there is a bucket block', () => {
@@ -155,7 +153,7 @@ describe('Bucket', () => {
         .mockReturnValue(bucketBlockDuration)
       jest.spyOn(Bucket, 'isGloballyBlocked')
         .mockReturnValue(false)
-      const result = Bucket.getBlockedDuration(new Map() as unknown as globalThis.Headers)
+      const result = Bucket.getBlockedDuration({})
       expect(result).toEqual(bucketBlockDuration)
     })
   })
