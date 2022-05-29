@@ -1,6 +1,7 @@
 import { request } from 'undici'
 import { FetchResponse } from './types/FetchResponse';
 import retry from 'retry'
+import pTimeout from 'p-timeout';
 
 type RequestOptions = {
   /**
@@ -53,7 +54,7 @@ class APIRequest {
       retries: maxRetries,
     });
 
-    return new Promise<FetchResponse>((resolve, reject) => {
+    return pTimeout(new Promise<FetchResponse>((resolve, reject) => {
       operation.attempt(async () => {
         try {
           const res = await this.sendFetch()
@@ -73,7 +74,7 @@ class APIRequest {
           }
         }
       })
-    })
+    }), 1000 * 60 * 5)
   }
 
   async sendFetch(): Promise<FetchResponse> {
@@ -86,14 +87,6 @@ class APIRequest {
         headersTimeout: 1000 * 60,
         maxRedirections: 10,
       })
-
-      // if (res.statusCode === 422) {
-        // throw new Error(`Rate limited (422 status code)`)
-      // }
-
-      // if (res.statusCode >= 500) {
-      //   throw new Error(`Discord internal error (${res.statusCode})`)
-      // }
 
       this.fetchSuccess = true
 

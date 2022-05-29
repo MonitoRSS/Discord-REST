@@ -1,5 +1,6 @@
 import APIRequest from './APIRequest'
 import { Interceptable, MockAgent, setGlobalDispatcher } from 'undici'
+import { TimeoutError } from 'p-timeout'
 
 describe('APIRequest', () => {
   const dummyHost = 'https://example.com'
@@ -23,6 +24,7 @@ describe('APIRequest', () => {
     jest.resetAllMocks()
     client.destroy()
   })
+  
   describe('constructor', () => {
     it('auto-increments the id', async () => {
       const apiRequest1 = new APIRequest('route')
@@ -139,6 +141,26 @@ describe('APIRequest', () => {
       expect(status).toEqual(500)
     })
   })
+
+  it('times out after 5 minutes', async () => {
+    jest.useFakeTimers()
+    client.intercept(interceptDetails).reply(500, {}).persist().delay(1000 * 60 * 10)
+
+    const apiRequest = new APIRequest(dummyUrl, {
+      maxRetries: 0
+    })
+
+    const promise = apiRequest.execute({
+      baseAttemptDelay: 1
+    })
+
+    jest.advanceTimersByTime(1000 * 60 * 8)
+
+    await expect(promise).rejects.toThrow(TimeoutError)
+
+    jest.useRealTimers()
+  })
+  
   describe('toString', () => {
     it('returns a string', async () => {
       const apiRequest = new APIRequest('route')
