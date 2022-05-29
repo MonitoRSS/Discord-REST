@@ -1,6 +1,6 @@
 import RESTHandler, { RESTHandlerOptions } from "./RESTHandler";
 import { EventEmitter } from "events";
-import { MessageParseError, MessageProcessingError, RequestTimeoutError } from "./errors";
+import { MessageParseError, MessageProcessingError } from "./errors";
 import * as yup from 'yup'
 import amqp from 'amqplib'
 import { getQueueConfig, getQueueName } from "./constants/queue-configs";
