@@ -1,6 +1,6 @@
 import RESTHandler, { RESTHandlerOptions } from "./RESTHandler";
 import { EventEmitter } from "events";
-import { MessageParseError, MessageProcessingError } from "./errors";
+import { MessageParseError, MessageProcessingError, RequestTimeoutError } from "./errors";
 import * as yup from 'yup'
 import amqp from 'amqplib'
 import { getQueueConfig, getQueueName } from "./constants/queue-configs";
@@ -212,7 +212,11 @@ class RESTConsumer extends EventEmitter {
           state: 'error',
           message
         }
-        this.emit('jobError', new MessageProcessingError(`Failed to process job (${message})`), data)
+        if (err instanceof RequestTimeoutError) {
+          this.emit('jobError', new RequestTimeoutError(`Job request timed out (${err.message})`), data)
+        } else {
+          this.emit('jobError', new MessageProcessingError(`Failed to process job (${message})`), data)
+        }
       }
 
 
@@ -255,6 +259,10 @@ class RESTConsumer extends EventEmitter {
 
     return new Promise<{status: number, body: Record<string, never>}>(async (resolve, reject) => {
       try {
+        const timeout = setTimeout(() => {
+          reject(new RequestTimeoutError())
+        }, 1000 * 60 * 10)
+
         const res = await handler.fetch(data.route, {
           ...data.options,
           headers: {
@@ -266,6 +274,9 @@ class RESTConsumer extends EventEmitter {
         })
 
         const parsedData = await this.handleJobFetchResponse(res)
+
+        clearTimeout(timeout)
+
         resolve(parsedData)
       } catch (err) {
         reject(err)
