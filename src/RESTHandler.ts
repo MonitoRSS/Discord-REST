@@ -176,7 +176,7 @@ class RESTHandler extends EventEmitter {
     this.queue = new PQueue({
       // 30/sec as a safe default
       interval: 1000,
-      intervalCap: 30,
+      intervalCap: this.userOptions.maxRequestsPerSecond,
       ...options?.pqueueOptions
     })
 
