@@ -70,6 +70,7 @@ declare interface RESTConsumer {
   emit(event: 'jobCompleted', job: JobData, result: JobResponse<Record<string, unknown>>): boolean
   emit(event: 'LongRunningBucketRequest', details: LongRunningBucketRequest): boolean
   emit(event: 'longRunningHandlerRequest', details: LongRunningHandlerRequest): boolean
+  emit(event: 'next', queueSize: number, pending: number): boolean
   on(event: 'globalBlock', listener: (blockType: GLOBAL_BLOCK_TYPE, blockedDurationMs: number) => void): this
   on(event: 'globalRestore', listener: (blockType: GLOBAL_BLOCK_TYPE) => void): this
   on(event: 'jobError', listener: (err: Error | RequestTimeoutError, job: JobData) => void): this
@@ -77,7 +78,7 @@ declare interface RESTConsumer {
   on(event: 'jobCompleted', listener: (job: JobData, result: JobResponse<Record<string, unknown>>) => void): this
   on(event: 'LongRunningBucketRequest', listener: (details: LongRunningBucketRequest) => void): this
   on(event: 'LongRunningHandlerRequest', listener: (details: LongRunningHandlerRequest) => void): this
-
+  on(event: 'next', listener: (queueSize: number, pending: number) => void): this
 }
 
 /**
@@ -140,6 +141,10 @@ class RESTConsumer extends EventEmitter {
 
     this.handler.on('LongRunningBucketRequest', (details) => {
       this.emit('LongRunningBucketRequest', details)
+    })
+
+    this.handler.on('next', (queueSize, pending) => {
+      this.emit('next', queueSize, pending)
     })
 
     const connection = await amqp.connect(this.rabbitmqUri)

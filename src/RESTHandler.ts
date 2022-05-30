@@ -71,6 +71,7 @@ declare interface RESTHandler {
   emit(event: 'idle'|'active'): boolean
   emit(event: 'LongRunningBucketRequest', details: LongRunningBucketRequest): boolean
   emit(event: 'longRunningHandlerRequest', details: LongRunningHandlerRequest): boolean
+  emit(event: 'next', queueSize: number, pending: number): boolean
   /**
    * When a global block is in place. This can be from cloudflare rate limits, invalid requests
    * threshold, and global rate limits (from Discord).
@@ -97,6 +98,10 @@ declare interface RESTHandler {
    * When the RESTHandler's processing time of a request has taken longer than 10 minutes
    */
   on(event: 'LongRunningHandlerRequest', listener: (details: LongRunningHandlerRequest) => void): this
+  /**
+   * When another request has been completed.
+   */
+  on(event: 'next', listener: (queueSize: number, pending: number) => void): this
 }
 
 /**
@@ -175,14 +180,20 @@ class RESTHandler extends EventEmitter {
       ...options?.pqueueOptions
     })
 
-    if (options?.delayOnInvalidThreshold !== false && process.env.NODE_ENV !== 'test') {
-      /**
-       * Reset the invalid requests count every 10 minutes
-       * since that is the duration specified by Discord.
-       */
-      setInterval(() => {
-        this.invalidRequestsCount = 0
-      }, 1000 * 60 * 10)
+    if (process.env.NODE_ENV !== 'test') {
+      if (options?.delayOnInvalidThreshold !== false) {
+        /**
+         * Reset the invalid requests count every 10 minutes
+         * since that is the duration specified by Discord.
+         */
+        setInterval(() => {
+          this.invalidRequestsCount = 0
+        }, 1000 * 60 * 10)
+      }
+
+      this.queue.on('next', () => {
+        this.emit('next', this.queue.size, this.queue.pending)
+      })
     }
   }
 
@@ -405,7 +416,7 @@ class RESTHandler extends EventEmitter {
       })
     }, 1000 * 60 * 10)
     
-    options.debugHistory?.push(`Retrieved bucket ${bucket.id}, adding to global queue. Current queue length: ${this.queue.size}`)
+    options.debugHistory?.push(`Retrieved bucket ${bucket.id}, adding to global queue. Current queue length: ${this.queue.size}. Current block ${(this.globallyBlockedUntil?.getTime() || 0) / 1000}`)
 
     const result = await this.queue.add(() => {
       options.debugHistory?.push(`p-queue job started, enqueuing into bucket ${bucket.id}`)
