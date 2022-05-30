@@ -1,6 +1,6 @@
 import RESTHandler, { RESTHandlerOptions } from "./RESTHandler";
 import { EventEmitter } from "events";
-import { MessageParseError, MessageProcessingError, RequestTimeoutError, RequestParseTimeoutError } from "./errors";
+import { MessageParseError, RequestTimeoutError } from "./errors";
 import * as yup from 'yup'
 import amqp from 'amqplib'
 import { getQueueConfig, getQueueName } from "./constants/queue-configs";
@@ -31,6 +31,11 @@ interface ConsumerOptions {
    * integration testing.
    */
   autoDeleteQueues?: boolean
+  /**
+   * Auto reject jobs after a duration, which also acknowledges the RabbitMQ message. These
+   * jobs will emit a "jobError" event
+   */
+  rejectJobsAfterDurationMs?: number
 }
 
 interface RequestOptions extends RequestInit {
@@ -270,11 +275,16 @@ class RESTConsumer extends EventEmitter {
     }
 
     return new Promise<{status: number, body: Record<string, never>}>(async (resolve, reject) => {
+      const { rejectJobsAfterDurationMs } = this.consumerOptions
       try {
         const debugHistory: string[] = []
-        const fetchTimeout = setTimeout(() => {
-          reject(new Error(`Request processing took longer than 10 minutes (debugHistory: ${JSON.stringify(debugHistory)})`))
-        }, 1000 * 60 * 10)
+        let fetchTimeout: NodeJS.Timeout | null = null
+
+        if (rejectJobsAfterDurationMs) {
+          fetchTimeout = setTimeout(() => {
+            reject(new Error(`Request processing took longer than ${rejectJobsAfterDurationMs}ms (debugHistory: ${JSON.stringify(debugHistory)})`))
+          }, rejectJobsAfterDurationMs)
+        }
 
         const res = await handler.fetch(data.route, {
           ...data.options,
@@ -286,15 +296,12 @@ class RESTConsumer extends EventEmitter {
             ...data.options.headers,
           }
         })
-        clearTimeout(fetchTimeout)
 
-        const parseTimeout = setTimeout(() => {
-          reject(new Error('Parsing request body timed out after 10 minutes'))
-        }, 1000 * 60 * 10)
+        if (fetchTimeout) {
+          clearTimeout(fetchTimeout)
+        }
 
         const parsedData = await this.handleJobFetchResponse(res)
-
-        clearTimeout(parseTimeout)
 
         resolve(parsedData)
       } catch (err) {
