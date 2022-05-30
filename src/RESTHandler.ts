@@ -6,6 +6,7 @@ import PriorityQueue from "p-queue/dist/priority-queue";
 import { GLOBAL_BLOCK_TYPE } from "./constants/global-block-type";
 import { RequestOptions } from "./types/RequestOptions";
 import { FetchResponse } from "./types/FetchResponse";
+import { LongRunningRequestDetails } from "./types/LongRunningRequest";
 
 export type RESTHandlerOptions = {
   /**
@@ -66,6 +67,7 @@ declare interface RESTHandler {
   emit(event: 'rateLimit', apiRequest: APIRequest, blockedDurationMs: number): boolean
   emit(event: 'invalidRequest', apiRequest: APIRequest, countSoFar: number): boolean
   emit(event: 'idle'|'active'): boolean
+  emit(event: 'longRunningRequest', details: LongRunningRequestDetails): boolean
   /**
    * When a global block is in place. This can be from cloudflare rate limits, invalid requests
    * threshold, and global rate limits (from Discord).
@@ -84,6 +86,10 @@ declare interface RESTHandler {
    * is encountered.
    */
   on(event: 'invalidRequest', listener: (apiRequest: APIRequest, countSoFar: number) => void): this
+  /**
+   * When a request has taken longer than 10 minutes
+   */
+  on(event: 'longRunningRequest', listener: (details: LongRunningRequestDetails) => void): this
 }
 
 /**
@@ -211,6 +217,9 @@ class RESTHandler extends EventEmitter {
         durationMs,
         blockType: GLOBAL_BLOCK_TYPE.CLOUDFLARE_RATE_LIMIT
       })
+    })
+    bucket.on('longRunningRequest', details => {
+      this.emit('longRunningRequest', details)
     })
   }
 

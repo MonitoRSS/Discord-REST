@@ -19,15 +19,48 @@ async function flushPromises(): Promise<void> {
   });
 }
 
+jest.useFakeTimers()
+
 describe('RESTHandler', () => {
   beforeEach(() => {
-    jest.restoreAllMocks()
-    jest.useFakeTimers()
+    jest.clearAllTimers()
+    jest.clearAllMocks()
   })
-  afterEach(() => {
-    jest.useRealTimers()
-  })
+
   describe('requests in the same bucket', () => {
+    it('does not emit long running request if a job is successful', async () => {
+      jest.spyOn(APIRequest.prototype, 'execute')
+        .mockResolvedValue(okResponse)
+      const handler = new RESTHandler()
+      const handlerEmit = jest.spyOn(handler, 'emit')
+      await handler.fetch('https://whatever.com/channels/123', {})
+      jest.advanceTimersByTime(1000 * 60 * 15)
+
+      const allEventsEmitted = handlerEmit.mock.calls.map(([event]) => event)
+      expect(allEventsEmitted).not.toContain('longRunningRequest')
+    })
+
+    it('emits long running request if a job is hung up', async () => {
+      jest.spyOn(APIRequest.prototype, 'execute')
+        .mockImplementation(async () => {
+          return new Promise<void>((resolve) => {
+            setTimeout(() => {
+              resolve()
+            }, 1e15)
+          }) as never
+        })
+  
+      const handler = new RESTHandler()
+      const handlerEmit = jest.spyOn(handler, 'emit')
+
+      handler.fetch('https://whatever.com/channels/123', {})
+      jest.advanceTimersByTime(1000 * 60 * 15)
+
+      const allEventsEmitted = handlerEmit.mock.calls.map(([event]) => event)
+      expect(allEventsEmitted).toContain('longRunningRequest')
+      jest.runAllTimers()
+    })
+
     it('still executes enqueued requests after a global limit hit', async () => {
       // Set up the test to cause a global rate limit on the first request
       const globalBlockDuration = '99999999'
@@ -67,6 +100,7 @@ describe('RESTHandler', () => {
         okResponse
       ])
     })
+
     it('still executes enqueued requests after a failure', async () => {
       // Set up test to cause a failure on the first request
       const firstRequestError = new Error('random fetch error')

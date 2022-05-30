@@ -4,6 +4,7 @@ import { Debugger } from 'debug';
 import { createBucketDebug } from './util/debug';
 import { IncomingHttpHeaders } from 'http';
 import { FetchResponse } from './types/FetchResponse';
+import { LongRunningRequestDetails } from './types/LongRunningRequest';
 
 declare interface Bucket {
   emit(event: 'recognizeURLBucket', url: string, bucketId: string): boolean
@@ -12,12 +13,14 @@ declare interface Bucket {
   emit(event: 'globalRateLimit', apiRequest: APIRequest, blockedDurationMs: number): boolean
   emit(event: 'cloudflareRateLimit', apiRequest: APIRequest, blockedDurationMs: number): boolean
   emit(event: 'invalidRequest', apiRequest: APIRequest): boolean;
+  emit(event: 'longRunningRequest', details: LongRunningRequestDetails): boolean;
   on(event: 'recognizeURLBucket', listener: (url: string, bucketId: string) => void): this
   on(event: 'finishedAll', listener: () => void): this
   on(event: 'rateLimit', listener: (apiRequest: APIRequest, blockedDurationMs: number) => void): this
   on(event: 'globalRateLimit', listener: (apiRequest: APIRequest, blockedDurationMs: number) => void): this
   on(event: 'cloudflareRateLimit', listener: (apiRequest: APIRequest, blockedDurationMs: number) => void): this
   on(event: 'invalidRequest', listener: (apiRequest: APIRequest) => void): this
+  on(event: 'longRunningRequest', listener: (details: LongRunningRequestDetails) => void): this;
 }
 
 /**
@@ -273,6 +276,15 @@ class Bucket extends EventEmitter {
    * @returns Node fetch response
    */
   public enqueue (apiRequest: APIRequest): Promise<FetchResponse> {
+    const longRunningRequestTimeout = setTimeout(() => {
+      this.emit('longRunningRequest', {
+        bucketBlockedUntil: this.blockedUntil || null,
+        bucketId: this.id,
+        bucketQueueLength: this.queue.length,
+        executedApiRequest: apiRequest.hasSucceeded() !== undefined,
+      })
+    }, 1000 * 60 * 10)
+
     this.debug(`Enqueuing request ${apiRequest.toString()}`)
     /**
      * Access the last one in the queue *before* we enter the
@@ -306,6 +318,7 @@ class Bucket extends EventEmitter {
       } finally {
         this.debug(`Finished ${apiRequest.toString()}`)
         this.finishHandling(apiRequest)
+        clearTimeout(longRunningRequestTimeout)
       }
     })
   }

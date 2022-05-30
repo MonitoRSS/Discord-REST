@@ -8,6 +8,7 @@ import { GLOBAL_BLOCK_TYPE } from "./constants/global-block-type";
 import dayjs from "dayjs";
 import utc from 'dayjs/plugin/utc'
 import { FetchResponse } from "./types/FetchResponse";
+import { LongRunningRequestDetails } from "./types/LongRunningRequest";
 dayjs.extend(utc)
 
 interface ConsumerOptions {
@@ -66,11 +67,13 @@ declare interface RESTConsumer {
   emit(event: 'jobError', error: Error, job: JobData): boolean
   emit(event: 'err', error: Error): boolean
   emit(event: 'jobCompleted', job: JobData, result: JobResponse<Record<string, unknown>>): boolean
+  emit(event: 'longRunningRequest', details: LongRunningRequestDetails): boolean
   on(event: 'globalBlock', listener: (blockType: GLOBAL_BLOCK_TYPE, blockedDurationMs: number) => void): this
   on(event: 'globalRestore', listener: (blockType: GLOBAL_BLOCK_TYPE) => void): this
   on(event: 'jobError', listener: (err: Error, job: JobData) => void): this
   on(event: 'err', listener: (err: Error) => void): this
   on(event: 'jobCompleted', listener: (job: JobData, result: JobResponse<Record<string, unknown>>) => void): this
+  on(event: 'longRunningRequest', listener: (details: LongRunningRequestDetails) => void): this
 }
 
 /**
@@ -129,6 +132,10 @@ class RESTConsumer extends EventEmitter {
     this.handler.on('globalRestore', (blockType) => {
       this.emit('globalRestore', blockType)
       this.startConsumer()
+    })
+
+    this.handler.on('longRunningRequest', (details) => {
+      this.emit('longRunningRequest', details)
     })
 
     const connection = await amqp.connect(this.rabbitmqUri)
