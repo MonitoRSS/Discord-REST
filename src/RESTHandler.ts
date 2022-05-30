@@ -405,7 +405,7 @@ class RESTHandler extends EventEmitter {
       })
     }, 1000 * 60 * 10)
     
-    options.debugHistory?.push(`Retrieved bucket ${bucket.id}, adding to p-queue`)
+    options.debugHistory?.push(`Retrieved bucket ${bucket.id}, adding to global queue. Current queue length: ${this.queue.size}`)
 
     const result = await this.queue.add(() => {
       options.debugHistory?.push(`p-queue job started, enqueuing into bucket ${bucket.id}`)
