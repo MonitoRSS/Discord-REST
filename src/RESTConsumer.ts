@@ -268,7 +268,7 @@ class RESTConsumer extends EventEmitter {
       try {
         const debugHistory: string[] = []
         const fetchTimeout = setTimeout(() => {
-          reject(`Request processing took longer than 10 minutes (debugHistory: ${JSON.stringify(debugHistory)})`)
+          reject(new Error(`Request processing took longer than 10 minutes (debugHistory: ${JSON.stringify(debugHistory)})`))
         }, 1000 * 60 * 10)
 
         const res = await handler.fetch(data.route, {
@@ -284,7 +284,7 @@ class RESTConsumer extends EventEmitter {
         clearTimeout(fetchTimeout)
 
         const parseTimeout = setTimeout(() => {
-          reject('Parsing request body timed out after 10 minutes')
+          reject(new Error('Parsing request body timed out after 10 minutes'))
         }, 1000 * 60 * 10)
 
         const parsedData = await this.handleJobFetchResponse(res)
