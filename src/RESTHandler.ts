@@ -417,10 +417,10 @@ class RESTHandler extends EventEmitter {
     
     options.debugHistory?.push(`Retrieved bucket ${bucket.id}, adding to global queue. Current queue length: ${this.queue.size}. Current block ${(this.globallyBlockedUntil?.getTime() || 0) / 1000}`)
 
-    const result = await this.queue.add(() => {
+    const result = await this.queue.add(async () => {
       options.debugHistory?.push(`p-queue job started, enqueuing into bucket ${bucket.id}`)
 
-      return bucket.enqueue(apiRequest, {
+      return await bucket.enqueue(apiRequest, {
         debugHistory: options.debugHistory
       })
     })
