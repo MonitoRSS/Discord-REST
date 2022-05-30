@@ -4,7 +4,7 @@ import { Debugger } from 'debug';
 import { createBucketDebug } from './util/debug';
 import { IncomingHttpHeaders } from 'http';
 import { FetchResponse } from './types/FetchResponse';
-import { LongRunningRequestDetails } from './types/LongRunningRequest';
+import { LongRunningBucketRequest } from './types/LongRunningBucketRequest';
 
 declare interface Bucket {
   emit(event: 'recognizeURLBucket', url: string, bucketId: string): boolean
@@ -13,14 +13,14 @@ declare interface Bucket {
   emit(event: 'globalRateLimit', apiRequest: APIRequest, blockedDurationMs: number): boolean
   emit(event: 'cloudflareRateLimit', apiRequest: APIRequest, blockedDurationMs: number): boolean
   emit(event: 'invalidRequest', apiRequest: APIRequest): boolean;
-  emit(event: 'longRunningRequest', details: LongRunningRequestDetails): boolean;
+  emit(event: 'LongRunningBucketRequest', details: LongRunningBucketRequest): boolean;
   on(event: 'recognizeURLBucket', listener: (url: string, bucketId: string) => void): this
   on(event: 'finishedAll', listener: () => void): this
   on(event: 'rateLimit', listener: (apiRequest: APIRequest, blockedDurationMs: number) => void): this
   on(event: 'globalRateLimit', listener: (apiRequest: APIRequest, blockedDurationMs: number) => void): this
   on(event: 'cloudflareRateLimit', listener: (apiRequest: APIRequest, blockedDurationMs: number) => void): this
   on(event: 'invalidRequest', listener: (apiRequest: APIRequest) => void): this
-  on(event: 'longRunningRequest', listener: (details: LongRunningRequestDetails) => void): this;
+  on(event: 'LongRunningBucketRequest', listener: (details: LongRunningBucketRequest) => void): this;
 }
 
 /**
@@ -276,8 +276,8 @@ class Bucket extends EventEmitter {
    * @returns Node fetch response
    */
   public enqueue (apiRequest: APIRequest): Promise<FetchResponse> {
-    const longRunningRequestTimeout = setTimeout(() => {
-      this.emit('longRunningRequest', {
+    const LongRunningBucketRequestTimeout = setTimeout(() => {
+      this.emit('LongRunningBucketRequest', {
         bucketBlockedUntil: this.blockedUntil || null,
         bucketId: this.id,
         bucketQueueLength: this.queue.length,
@@ -318,7 +318,7 @@ class Bucket extends EventEmitter {
       } finally {
         this.debug(`Finished ${apiRequest.toString()}`)
         this.finishHandling(apiRequest)
-        clearTimeout(longRunningRequestTimeout)
+        clearTimeout(LongRunningBucketRequestTimeout)
       }
     })
   }

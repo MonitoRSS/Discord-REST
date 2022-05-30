@@ -37,7 +37,7 @@ describe('RESTHandler', () => {
       jest.advanceTimersByTime(1000 * 60 * 15)
 
       const allEventsEmitted = handlerEmit.mock.calls.map(([event]) => event)
-      expect(allEventsEmitted).not.toContain('longRunningRequest')
+      expect(allEventsEmitted).not.toContain('LongRunningBucketRequest')
     })
 
     it('emits long running request if a job is hung up', async () => {
@@ -57,7 +57,7 @@ describe('RESTHandler', () => {
       jest.advanceTimersByTime(1000 * 60 * 15)
 
       const allEventsEmitted = handlerEmit.mock.calls.map(([event]) => event)
-      expect(allEventsEmitted).toContain('longRunningRequest')
+      expect(allEventsEmitted).toContain('LongRunningBucketRequest')
       jest.runAllTimers()
     })
 

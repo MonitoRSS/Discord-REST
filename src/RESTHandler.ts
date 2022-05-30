@@ -6,7 +6,9 @@ import PriorityQueue from "p-queue/dist/priority-queue";
 import { GLOBAL_BLOCK_TYPE } from "./constants/global-block-type";
 import { RequestOptions } from "./types/RequestOptions";
 import { FetchResponse } from "./types/FetchResponse";
-import { LongRunningRequestDetails } from "./types/LongRunningRequest";
+import { LongRunningBucketRequest } from "./types/LongRunningBucketRequest";
+import { LongRunningHandlerRequest } from "./types/LongRunningHandlerRequest";
+import dayjs from "dayjs";
 
 export type RESTHandlerOptions = {
   /**
@@ -67,7 +69,8 @@ declare interface RESTHandler {
   emit(event: 'rateLimit', apiRequest: APIRequest, blockedDurationMs: number): boolean
   emit(event: 'invalidRequest', apiRequest: APIRequest, countSoFar: number): boolean
   emit(event: 'idle'|'active'): boolean
-  emit(event: 'longRunningRequest', details: LongRunningRequestDetails): boolean
+  emit(event: 'LongRunningBucketRequest', details: LongRunningBucketRequest): boolean
+  emit(event: 'longRunningHandlerRequest', details: LongRunningHandlerRequest): boolean
   /**
    * When a global block is in place. This can be from cloudflare rate limits, invalid requests
    * threshold, and global rate limits (from Discord).
@@ -87,9 +90,13 @@ declare interface RESTHandler {
    */
   on(event: 'invalidRequest', listener: (apiRequest: APIRequest, countSoFar: number) => void): this
   /**
-   * When a request has taken longer than 10 minutes
+   * When a bucket's processing time of a request has taken longer than 10 minutes
    */
-  on(event: 'longRunningRequest', listener: (details: LongRunningRequestDetails) => void): this
+  on(event: 'LongRunningBucketRequest', listener: (details: LongRunningBucketRequest) => void): this
+  /**
+   * When the RESTHandler's processing time of a request has taken longer than 10 minutes
+   */
+  on(event: 'LongRunningHandlerRequest', listener: (details: LongRunningHandlerRequest) => void): this
 }
 
 /**
@@ -153,6 +160,7 @@ class RESTHandler extends EventEmitter {
   pqueueOptions?: Options<PriorityQueue, DefaultAddOptions>
   private queueBlockTimer: NodeJS.Timer|null = null;
   private readonly userOptions: RESTHandlerOptions
+  private globallyBlockedUntil?: Date
 
   constructor (options?: RESTHandlerOptions) {
     super()
@@ -218,8 +226,8 @@ class RESTHandler extends EventEmitter {
         blockType: GLOBAL_BLOCK_TYPE.CLOUDFLARE_RATE_LIMIT
       })
     })
-    bucket.on('longRunningRequest', details => {
-      this.emit('longRunningRequest', details)
+    bucket.on('LongRunningBucketRequest', details => {
+      this.emit('LongRunningBucketRequest', details)
     })
   }
 
@@ -301,11 +309,13 @@ class RESTHandler extends EventEmitter {
         this.queue.clear()
       }
 
+      this.globallyBlockedUntil = dayjs().add(blockDuration, 'ms').toDate()
       this.emit('globalBlock', blockType, blockDuration)
 
       this.queueBlockTimer = setTimeout(() => {
         this.queue.start()
         this.queueBlockTimer = null
+        this.globallyBlockedUntil = undefined
         this.emit('globalRestore', blockType)
       }, blockDuration)
     }
@@ -377,6 +387,7 @@ class RESTHandler extends EventEmitter {
    * @returns node-fetch response
    */
   public async fetch (route: string, options: RequestOptions): Promise<FetchResponse> {
+    
     const { requestTimeoutRetries } = this.userOptions
     const apiRequest = new APIRequest(route, {
       maxRetries: requestTimeoutRetries,
@@ -384,7 +395,18 @@ class RESTHandler extends EventEmitter {
     })
     const url = apiRequest.route
     const bucket = this.getBucketForUrl(url)
+
+    const longRunningTimeout = setTimeout(() => {
+      this.emit('longRunningHandlerRequest', {
+        executedApiRequest: apiRequest.hasSucceeded() !== undefined,
+        globalBlockedUntil: this.globallyBlockedUntil || null,
+        globalQueueLength: this.queue.size
+      })
+    }, 1000 * 60 * 10)
+
     const result = await this.queue.add(() => bucket.enqueue(apiRequest))
+
+    clearTimeout(longRunningTimeout)
     return result
   }
 }

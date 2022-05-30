@@ -1,4 +1,4 @@
-export interface LongRunningRequestDetails {
+export interface LongRunningBucketRequest {
   executedApiRequest: boolean
   bucketQueueLength: number
   bucketBlockedUntil: Date | null
