@@ -20,3 +20,11 @@ consumer.initialize()
   console.error(err)
   process.exit(1)
 })
+
+consumer.on('jobError', (error) => {
+  console.log(`Job error: ${error.message}`)
+})
+
+consumer.on('next', (queueSize, pending) => {
+  console.log(`Task completed. Global queue: ${queueSize}, pending: ${pending}`)
+})
