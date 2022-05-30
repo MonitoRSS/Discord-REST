@@ -35,7 +35,6 @@ describe('RESTHandler', () => {
       const handlerEmit = jest.spyOn(handler, 'emit')
       await handler.fetch('https://whatever.com/channels/123', {})
       jest.advanceTimersByTime(1000 * 60 * 15)
-
       const allEventsEmitted = handlerEmit.mock.calls.map(([event]) => event)
       expect(allEventsEmitted).not.toContain('LongRunningBucketRequest')
     })
@@ -52,12 +51,15 @@ describe('RESTHandler', () => {
   
       const handler = new RESTHandler()
       const handlerEmit = jest.spyOn(handler, 'emit')
-
-      handler.fetch('https://whatever.com/channels/123', {})
+      const debugHistory: string[] = []
+      handler.fetch('https://whatever.com/channels/123', {
+        debugHistory
+      })
       jest.advanceTimersByTime(1000 * 60 * 15)
 
       const allEventsEmitted = handlerEmit.mock.calls.map(([event]) => event)
       expect(allEventsEmitted).toContain('LongRunningBucketRequest')
+      console.log(debugHistory)
       jest.runAllTimers()
     })
 

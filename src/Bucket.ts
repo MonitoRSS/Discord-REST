@@ -245,11 +245,17 @@ class Bucket extends EventEmitter {
   /**
    * Delay the execution and resolution of an API request
    */
-  private async delayExecution (apiRequest: APIRequest): Promise<FetchResponse> {
+  private async delayExecution (apiRequest: APIRequest, options?: {
+    debugHistory?: string[]
+  }): Promise<FetchResponse> {
     const now = new Date().getTime()
     const future = (this.blockedUntil as Date).getTime()
+
+    options?.debugHistory?.push(`Delaying execution for ${(future-now) * 1000}s`)
+
     return new Promise((resolve) => {
       setTimeout(() => {
+        options?.debugHistory?.push(`Delayed execution timeout has finished, executing now`)
         resolve(this.execute(apiRequest))
       }, future - now)
     })
@@ -258,10 +264,15 @@ class Bucket extends EventEmitter {
   /**
    * Wait for previous API requests to finish
    */
-  private async waitForRequest (apiRequest: APIRequest): Promise<void> {
+  private async waitForRequest (apiRequest: APIRequest, options?: {
+    debugHistory?: string[]
+  }): Promise<void> {
     if (!apiRequest) {
+      options?.debugHistory?.push(`Not waiting for any request since there is no previous api request`)
       return
     }
+
+    options?.debugHistory?.push(`Waiting for request ${apiRequest?.route} before executing`)
     return new Promise((resolve) => {
       this.once(`finishedRequest-${apiRequest.id}`, resolve)
     })
@@ -275,7 +286,9 @@ class Bucket extends EventEmitter {
    * 
    * @returns Node fetch response
    */
-  public enqueue (apiRequest: APIRequest): Promise<FetchResponse> {
+  public enqueue (apiRequest: APIRequest, options?: {
+    debugHistory?: string[]
+  }): Promise<FetchResponse> {
     const LongRunningBucketRequestTimeout = setTimeout(() => {
       this.emit('LongRunningBucketRequest', {
         bucketBlockedUntil: this.blockedUntil || null,
@@ -292,6 +305,9 @@ class Bucket extends EventEmitter {
      * the function.
      */
     const previousRequest = this.queue[this.queue.length - 1]
+
+    options?.debugHistory?.push(`Bucket ${this.id} has pushed API request into queue`)
+
     this.queue.push(apiRequest)
     // eslint-disable-next-line no-async-promise-executor
     return new Promise(async (resolve, reject) => {
@@ -301,8 +317,13 @@ class Bucket extends EventEmitter {
          * recursive-like pattern, and is guaranteed to only
          * be executed after all previous requests were executed
          */
-        await this.waitForRequest(previousRequest)
-        const result = await this.execute(apiRequest)
+        await this.waitForRequest(previousRequest, options)
+
+        options?.debugHistory?.push(`Running execute now`)
+        const result = await this.execute(apiRequest, options)
+
+        options?.debugHistory?.push(`Execution has finished, removing from queue`)
+
         this.queue.splice(this.queue.indexOf(apiRequest), 1)
         /**
          * If the queue is empty, emit an event that allows the
@@ -312,6 +333,9 @@ class Bucket extends EventEmitter {
           this.debug('Finished entire queue')
           this.emit('finishedAll')
         }
+
+        options?.debugHistory?.push(`Resolving with result ${JSON.stringify(result)}`)
+
         resolve(result)
       } catch (err) {
         reject(err)
@@ -326,19 +350,30 @@ class Bucket extends EventEmitter {
   /**
    * Execute a APIRequest by fetching it
    */
-  private async execute (apiRequest: APIRequest): Promise<FetchResponse> {
+  private async execute (apiRequest: APIRequest, options?: {
+    debugHistory?: string[]
+  }): Promise<FetchResponse> {
+    options?.debugHistory?.push(`Execution process started...`)
+
     if (this.blockedUntil) {
       this.debug(`Delaying execution until ${this.blockedUntil} for ${apiRequest.toString()}`)
+      options?.debugHistory?.push(`Delaying execution until ${this.blockedUntil} for ${apiRequest.toString()}`)
+      
       return this.delayExecution(apiRequest)
     }
+
+    options?.debugHistory?.push(`API request sending out`)
     this.debug(`Executing ${apiRequest.toString()}`)
     const res = await apiRequest.execute()
     const { status, headers } = res
+
+    options?.debugHistory?.push(`API request successfully got a response: status is ${res.status}`)
+    
     this.recognizeURLBucket(apiRequest.route, headers)
     if (status === 429) {
-      return this.handle429Response(apiRequest, res)
+      return this.handle429Response(apiRequest, res, options)
     } else {
-      return this.handleResponse(apiRequest, res)
+      return this.handleResponse(apiRequest, res, options)
     }
   }
 
@@ -355,21 +390,26 @@ class Bucket extends EventEmitter {
   /**
    * Handle 429 status code response (rate limited)
    */
-  private async handle429Response (apiRequest: APIRequest, res: FetchResponse): Promise<FetchResponse> {
+  private async handle429Response (apiRequest: APIRequest, res: FetchResponse, options?: {
+    debugHistory?: string[]
+  }): Promise<FetchResponse> {
     const { headers } = res
     let blockedDurationMs = Bucket.getBlockedDuration(headers, true)
     this.debug(`429 hit for ${apiRequest.toString()}`)
+
     if (Bucket.isGloballyBlocked(headers)) {
       this.debug(`Global limit was hit after ${apiRequest.toString()}`)
       this.emit('globalRateLimit', apiRequest, blockedDurationMs)
     } else {
       this.emit('rateLimit', apiRequest, blockedDurationMs)
     }
+
     if (blockedDurationMs === -1) {
       // Typically when the IP has been blocked by Cloudflare. Wait 3 hours if this happens.
       blockedDurationMs = 1000 * 60 * 60 * 3
       this.emit('cloudflareRateLimit', apiRequest, blockedDurationMs)
     }
+
     /**
      * 429 is considered an invalid request, and is counted towards
      * a hard limit that will result in an temporary IP ban if
@@ -377,6 +417,8 @@ class Bucket extends EventEmitter {
      */
     this.emit('invalidRequest', apiRequest)
     this.debug(`Blocking for ${blockedDurationMs}ms after 429 response for ${apiRequest.toString()}`)
+    options?.debugHistory?.push(`Blocking bucket for ${blockedDurationMs}ms after a 429 response`)
+
     this.block(blockedDurationMs)
     const futureResult = await this.delayExecution(apiRequest)
     return futureResult
@@ -385,13 +427,20 @@ class Bucket extends EventEmitter {
   /**
    * Handle any responses that is not a rate limit block
    */
-  private async handleResponse (apiRequest: APIRequest, res: FetchResponse): Promise<FetchResponse> {
+  private async handleResponse (apiRequest: APIRequest, res: FetchResponse, options?: {
+    debugHistory?: string[]
+  }): Promise<FetchResponse> {
     this.debug(`Non-429 response for ${apiRequest.toString()}`)
     const blockedDurationMs = Bucket.getBlockedDuration(res.headers)
+
     if (blockedDurationMs !== -1) {
       this.debug(`Blocking for ${blockedDurationMs}ms after non-429 response for ${apiRequest.toString()}`)
+      options?.debugHistory?.push(`Block duration ${blockedDurationMs}ms was found for non-429 response.`)
       this.block(blockedDurationMs)
+    } else {
+      options?.debugHistory?.push(`Got an OK response, returning res`)
     }
+    
     /**
      * 401 and 403 are considered invalid requests, and are counted
      * towards a hard limit that will result in a temporary IP ban

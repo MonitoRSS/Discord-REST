@@ -396,6 +396,7 @@ class RESTHandler extends EventEmitter {
     const url = apiRequest.route
     const bucket = this.getBucketForUrl(url)
 
+    
     const longRunningTimeout = setTimeout(() => {
       this.emit('longRunningHandlerRequest', {
         executedApiRequest: apiRequest.hasSucceeded() !== undefined,
@@ -403,8 +404,16 @@ class RESTHandler extends EventEmitter {
         globalQueueLength: this.queue.size
       })
     }, 1000 * 60 * 10)
+    
+    options.debugHistory?.push(`Retrieved bucket ${bucket.id}, adding to p-queue`)
 
-    const result = await this.queue.add(() => bucket.enqueue(apiRequest))
+    const result = await this.queue.add(() => {
+      options.debugHistory?.push(`p-queue job started, enqueuing into bucket ${bucket.id}`)
+
+      return bucket.enqueue(apiRequest, {
+        debugHistory: options.debugHistory
+      })
+    })
 
     clearTimeout(longRunningTimeout)
     return result

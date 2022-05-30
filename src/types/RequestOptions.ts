@@ -6,4 +6,5 @@ export type RequestOptions = {
   method?: 'POST'|'GET'|'PATCH'|'PUT'
   body?: string
   headers?: Record<string, string>
+  debugHistory?: string[]
 }

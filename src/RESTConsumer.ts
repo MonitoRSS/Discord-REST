@@ -65,14 +65,14 @@ export interface JobResponseError {
 declare interface RESTConsumer {
   emit(event: 'globalBlock', blockType: GLOBAL_BLOCK_TYPE, blockedDurationMs: number): boolean
   emit(event: 'globalRestore', blockType: GLOBAL_BLOCK_TYPE): boolean
-  emit(event: 'jobError', error: Error, job: JobData): boolean
+  emit(event: 'jobError', error: Error | RequestTimeoutError, job: JobData): boolean
   emit(event: 'err', error: Error): boolean
   emit(event: 'jobCompleted', job: JobData, result: JobResponse<Record<string, unknown>>): boolean
   emit(event: 'LongRunningBucketRequest', details: LongRunningBucketRequest): boolean
   emit(event: 'longRunningHandlerRequest', details: LongRunningHandlerRequest): boolean
   on(event: 'globalBlock', listener: (blockType: GLOBAL_BLOCK_TYPE, blockedDurationMs: number) => void): this
   on(event: 'globalRestore', listener: (blockType: GLOBAL_BLOCK_TYPE) => void): this
-  on(event: 'jobError', listener: (err: Error, job: JobData) => void): this
+  on(event: 'jobError', listener: (err: Error | RequestTimeoutError, job: JobData) => void): this
   on(event: 'err', listener: (err: Error) => void): this
   on(event: 'jobCompleted', listener: (job: JobData, result: JobResponse<Record<string, unknown>>) => void): this
   on(event: 'LongRunningBucketRequest', listener: (details: LongRunningBucketRequest) => void): this
@@ -270,12 +270,14 @@ class RESTConsumer extends EventEmitter {
 
     return new Promise<{status: number, body: Record<string, never>}>(async (resolve, reject) => {
       try {
+        const debugHistory: string[] = []
         const fetchTimeout = setTimeout(() => {
-          reject(new RequestTimeoutError())
+          reject(new RequestTimeoutError(undefined, debugHistory))
         }, 1000 * 60 * 10)
 
         const res = await handler.fetch(data.route, {
           ...data.options,
+          debugHistory,
           headers: {
             Authorization: this.consumerOptions.authHeader,
             'Content-Type': 'application/json',
