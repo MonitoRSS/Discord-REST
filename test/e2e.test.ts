@@ -1,6 +1,6 @@
 import RESTConsumer from "../src/RESTConsumer";
 import RESTProducer from "../src/RESTProducer";
-import nock from 'nock'
+import { Interceptable, MockAgent, setGlobalDispatcher } from 'undici'
 
 const fallbackUri = 'amqp://localhost:5672';
 const RABBITMQ_URI = process.env.RABBITMQ_URI || fallbackUri;
@@ -9,7 +9,14 @@ describe('e2e test', () => {
   let consumer: RESTConsumer;
   let producer: RESTProducer;
   const clientId = 'test:client-id'
-  const route = 'https://example.com/messages'
+  const dummyHost = 'https://example.com'
+  const dummyEndpoint = '/messages'
+  const dummyUrl = dummyHost + dummyEndpoint
+  let client: Interceptable
+  const interceptDetails = {
+    path: dummyEndpoint,
+    method: 'GET',
+  }
 
   beforeAll(async () => {
     if (!RABBITMQ_URI) {
@@ -33,7 +40,10 @@ describe('e2e test', () => {
 
   beforeEach(() => {
     jest.resetAllMocks()
-    nock.cleanAll()
+    const agent = new MockAgent()
+    agent.disableNetConnect()
+    setGlobalDispatcher(agent)
+    client = agent.get(dummyHost)
   })
 
   describe('producer', () => {
@@ -42,11 +52,13 @@ describe('e2e test', () => {
         const apiResponse = {
           foo: 'bar'
         }
-        nock('https://example.com')
-          .get('/messages')
-          .reply(200, apiResponse)
-    
-        const result = await producer.fetch(route)
+        client.intercept(interceptDetails).reply(200, apiResponse, {
+          headers: {
+            'content-type': 'application/json'
+          }
+        })
+
+        const result = await producer.fetch(dummyUrl)
         expect(result.state).toEqual('success')
 
         if (result.state === 'success') {
@@ -60,12 +72,13 @@ describe('e2e test', () => {
         const apiResponse = {
           foo: 'bar'
         }
-        nock('https://example.com')
-          .get('/messages')
-          .reply(apiStatus, apiResponse)
-          .persist()
-    
-        const result = await producer.fetch(route)
+        client.intercept(interceptDetails).reply(apiStatus, apiResponse, {
+          headers: {
+            'content-type': 'application/json'
+          }
+        })
+
+        const result = await producer.fetch(dummyUrl)
         expect(result.state).toEqual('success')
 
         if (result.state === 'success') {
@@ -77,11 +90,13 @@ describe('e2e test', () => {
 
       it('returns the correct properties on a status code 204', async () => {
         const apiStatus = 204
-        nock('https://example.com')
-          .get('/messages')
-          .reply(apiStatus)
-    
-        const result = await producer.fetch(route)
+        client.intercept(interceptDetails).reply(apiStatus, {}, {
+          headers: {
+            'content-type': 'application/json'
+          }
+        })
+
+        const result = await producer.fetch(dummyUrl)
         expect(result.state).toEqual('success')
 
         if (result.state === 'success') {
@@ -93,11 +108,9 @@ describe('e2e test', () => {
       it('returns if content is not json', async () => {
         const apiStatus = 400
         const apiResponse = 'text here'
-        nock('https://example.com')
-          .get('/messages')
-          .reply(apiStatus, apiResponse)
-    
-        const result = await producer.fetch(route)
+        client.intercept(interceptDetails).reply(apiStatus, apiResponse)
+
+        const result = await producer.fetch(dummyUrl)
         expect(result.state).toEqual('success')
 
         if (result.state === 'success') {
@@ -107,13 +120,11 @@ describe('e2e test', () => {
       })
 
       it('returns with error if fetch failed', async () => {
-        const apiResponse = 'text here'
-        nock('https://example.com')
-          .get('/messages')
-          .replyWithError(apiResponse)
-          .persist()
+        const apiResponse = new Error('text here')
+        client.intercept(interceptDetails).replyWithError(apiResponse)
+
     
-        const result = await producer.fetch(route)
+        const result = await producer.fetch(dummyUrl)
         expect(result.state).toEqual('error')
 
         if (result.state === 'error') {
@@ -124,7 +135,6 @@ describe('e2e test', () => {
   })
 
   afterAll(async () => {
-    nock.cleanAll()
     await consumer?.close()
     await producer?.close()
   })
