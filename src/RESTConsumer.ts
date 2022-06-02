@@ -318,7 +318,11 @@ class RESTConsumer extends EventEmitter {
     if (res.status === 204) {
       body = null
     } else if (res.headers['content-type']?.includes('application/json')) {
+      try {
       body = await res.json()
+      } catch (err) {
+        body = await res.text()
+      }
     } else {
       body = await res.text()
     }
