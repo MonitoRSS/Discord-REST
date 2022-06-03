@@ -72,6 +72,7 @@ declare interface RESTConsumer {
   emit(event: 'globalRestore', blockType: GLOBAL_BLOCK_TYPE): boolean
   emit(event: 'jobError', error: Error | RequestTimeoutError, job: JobData): boolean
   emit(event: 'err', error: Error): boolean
+  emit(event: 'idle'|'active'): boolean
   emit(event: 'jobCompleted', job: JobData, result: JobResponse<Record<string, unknown>>): boolean
   emit(event: 'LongRunningBucketRequest', details: LongRunningBucketRequest): boolean
   emit(event: 'longRunningHandlerRequest', details: LongRunningHandlerRequest): boolean
@@ -80,6 +81,7 @@ declare interface RESTConsumer {
   on(event: 'globalRestore', listener: (blockType: GLOBAL_BLOCK_TYPE) => void): this
   on(event: 'jobError', listener: (err: Error | RequestTimeoutError, job: JobData) => void): this
   on(event: 'err', listener: (err: Error) => void): this
+  on(event: 'idle'|'active', listener: () => void): this
   on(event: 'jobCompleted', listener: (job: JobData, result: JobResponse<Record<string, unknown>>) => void): this
   on(event: 'LongRunningBucketRequest', listener: (details: LongRunningBucketRequest) => void): this
   on(event: 'LongRunningHandlerRequest', listener: (details: LongRunningHandlerRequest) => void): this
@@ -150,6 +152,10 @@ class RESTConsumer extends EventEmitter {
 
     this.handler.on('next', (queueSize, pending) => {
       this.emit('next', queueSize, pending)
+    })
+
+    this.handler.on('idle', () => {
+      this.emit('idle')
     })
 
     const connection = await amqp.connect(this.rabbitmqUri)

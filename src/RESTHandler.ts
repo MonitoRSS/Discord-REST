@@ -93,6 +93,7 @@ declare interface RESTHandler {
    * is encountered.
    */
   on(event: 'invalidRequest', listener: (apiRequest: APIRequest, countSoFar: number) => void): this
+  on(event: 'idle'|'active', listener: () => void): this
   /**
    * When a bucket's processing time of a request has taken longer than 10 minutes
    */
@@ -195,6 +196,10 @@ class RESTHandler extends EventEmitter {
 
       this.queue.on('next', () => {
         this.emit('next', this.queue.size, this.queue.pending)
+      })
+
+      this.queue.on('idle', () => {
+        this.emit('idle')
       })
     }
   }
@@ -419,7 +424,7 @@ class RESTHandler extends EventEmitter {
     }, 1000 * 60 * 10)
 
     const longRunningInterval = setInterval(() => {
-      options.debugHistory?.push(`Current queue length: ${this.queue.size}. Current pending: ${this.queue.pending}.  Current block ${(this.globallyBlockedUntil?.getTime() || 0) / 1000}. Time: ${dayjs().tz('America/New_York').format('HH:mm:ss')}. Executed fetch: ${apiRequest.hasSucceeded()}.`)
+      options.debugHistory?.push(`Current queue length: ${this.queue.size}. Current pending: ${this.queue.pending}.  Current block ${(this.globallyBlockedUntil?.getTime() || 0) / 1000}, paused: ${this.queue.isPaused}. Time: ${dayjs().tz('America/New_York').format('HH:mm:ss')}. Executed fetch: ${apiRequest.hasSucceeded()}.`)
     }, 1000  * 60)
     
     options.debugHistory?.push(`Retrieved bucket ${bucket.id}, adding to global queue. Current queue length: ${this.queue.size}, pending: ${this.queue.pending}. Current block ${(this.globallyBlockedUntil?.getTime() || 0) / 1000}`)
