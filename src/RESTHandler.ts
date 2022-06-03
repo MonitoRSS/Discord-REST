@@ -419,7 +419,7 @@ class RESTHandler extends EventEmitter {
     }, 1000 * 60 * 10)
 
     const longRunningInterval = setInterval(() => {
-      options.debugHistory?.push(`Current queue length: ${this.queue.size}. Current pending: ${this.queue.pending}.  Current block ${(this.globallyBlockedUntil?.getTime() || 0) / 1000}. Time: ${dayjs().tz('America/New_York').format('HH:mm:ss')}`)
+      options.debugHistory?.push(`Current queue length: ${this.queue.size}. Current pending: ${this.queue.pending}.  Current block ${(this.globallyBlockedUntil?.getTime() || 0) / 1000}. Time: ${dayjs().tz('America/New_York').format('HH:mm:ss')}. Executed fetch: ${apiRequest.hasSucceeded()}.`)
     }, 1000  * 60)
     
     options.debugHistory?.push(`Retrieved bucket ${bucket.id}, adding to global queue. Current queue length: ${this.queue.size}, pending: ${this.queue.pending}. Current block ${(this.globallyBlockedUntil?.getTime() || 0) / 1000}`)
