@@ -1,7 +1,7 @@
 import Bucket from "./Bucket"
 import APIRequest from "./APIRequest";
 import { EventEmitter } from "events";
-import PQueue, { DefaultAddOptions, Options } from 'p-queue'
+import { DefaultAddOptions, Options } from 'p-queue'
 import PriorityQueue from "p-queue/dist/priority-queue";
 import { GLOBAL_BLOCK_TYPE } from "./constants/global-block-type";
 import { RequestOptions } from "./types/RequestOptions";
@@ -10,6 +10,7 @@ import { LongRunningBucketRequest } from "./types/LongRunningBucketRequest";
 import { LongRunningHandlerRequest } from "./types/LongRunningHandlerRequest";
 import dayjs from "dayjs";
 import timezone from 'dayjs/plugin/timezone'
+import { RateLimitedQueue } from "./util/RateLimitedQueue";
 
 dayjs.extend(timezone)
 
@@ -161,7 +162,7 @@ class RESTHandler extends EventEmitter {
    * Stores all API requests to be executed at a maximum
    * rate of 14 requests per second
    */
-  private readonly queue: PQueue;
+  private readonly queue: RateLimitedQueue<{ apiRequest: APIRequest, debugHistory?: string[] }, FetchResponse>;
   /**
    * Options for PQueue that holds enqueues all requests
    * See https://github.com/sindresorhus/p-queue
@@ -177,10 +178,15 @@ class RESTHandler extends EventEmitter {
     this.invalidRequestsThreshold = options?.invalidRequestsThreshold || 5000
     this.globalBlockDurationMultiple = options?.globalBlockDurationMultiple || 1
 
-    this.queue = new PQueue({
-      interval: 1000,
-      intervalCap: this.userOptions.maxRequestsPerSecond || 30,
-      ...options?.pqueueOptions
+    this.queue = new RateLimitedQueue(({apiRequest, debugHistory}) => {
+      const bucket = this.getBucketForUrl(apiRequest.route)
+      debugHistory?.push(`p-queue job started, enqueuing into bucket ${bucket.id}`)
+
+      return bucket.enqueue(apiRequest, {
+        debugHistory
+      })
+    }, {
+      maxPerSecond: options?.maxRequestsPerSecond || 35,
     })
 
     if (process.env.NODE_ENV !== 'test') {
@@ -193,14 +199,6 @@ class RESTHandler extends EventEmitter {
           this.invalidRequestsCount = 0
         }, 1000 * 60 * 10)
       }
-
-      this.queue.on('next', () => {
-        this.emit('next', this.queue.size, this.queue.pending)
-      })
-
-      this.queue.on('idle', () => {
-        this.emit('idle')
-      })
     }
   }
 
@@ -429,12 +427,9 @@ class RESTHandler extends EventEmitter {
     
     options.debugHistory?.push(`Retrieved bucket ${bucket.id}, adding to global queue. Current queue length: ${this.queue.size}, pending: ${this.queue.pending}. Current block ${(this.globallyBlockedUntil?.getTime() || 0) / 1000}`)
 
-    const result = await this.queue.add(async () => {
-      options.debugHistory?.push(`p-queue job started, enqueuing into bucket ${bucket.id}`)
-
-      return await bucket.enqueue(apiRequest, {
-        debugHistory: options.debugHistory
-      })
+    const result = await this.queue.add({
+      apiRequest,
+      debugHistory: options.debugHistory,
     })
 
     clearTimeout(longRunningTimeout)
