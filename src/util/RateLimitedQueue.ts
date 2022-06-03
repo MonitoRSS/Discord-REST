@@ -1,5 +1,6 @@
 import { RateLimit } from 'async-sema'
 import fastq from 'fastq';
+import type { queueAsPromised } from "fastq";
 
 interface Options {
   maxPerSecond: number
@@ -7,7 +8,7 @@ interface Options {
 
 export class RateLimitedQueue<Input, Response> {
   ratelimit: ReturnType<typeof RateLimit>
-  queue: fastq.queue<Input, Response>
+  queue: queueAsPromised<Input, Response>
   isPaused = false
 
   constructor(
@@ -18,28 +19,17 @@ export class RateLimitedQueue<Input, Response> {
     
     const wrappedWorker = async (item: Input) => {
       await this.ratelimit()
-      return await this.worker(item)
+
+      return this.worker(item)
     }
 
-    this.queue = fastq<never, Input, Response>(wrappedWorker, 5000)
+    this.queue = fastq.promise<never, Input, Response>(wrappedWorker, 5000)
   }
 
-  add(item: Input): Promise<Response> {
-    return new Promise<Response>((resolve, reject) => {
-      this.queue.push(item, (err, result) => {
-        if (err) {
-          reject(err)
-          return
-        } 
-        
-        if (!result) {
-          reject(new Error('No result returned from job'))
-          return
-        }
+  async add(item: Input): Promise<Response> {
+    const result = await this.queue.push(item)
 
-        resolve(result)
-      })
-    })
+    return result
   }
 
   pause(): void {
