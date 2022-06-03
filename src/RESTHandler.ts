@@ -1,14 +1,14 @@
 import Bucket from "./Bucket"
 import APIRequest from "./APIRequest";
 import { EventEmitter } from "events";
+import PQueue, { DefaultAddOptions, Options } from 'p-queue'
+import PriorityQueue from "p-queue/dist/priority-queue";
 import { GLOBAL_BLOCK_TYPE } from "./constants/global-block-type";
 import { RequestOptions } from "./types/RequestOptions";
 import { FetchResponse } from "./types/FetchResponse";
 import { LongRunningBucketRequest } from "./types/LongRunningBucketRequest";
 import { LongRunningHandlerRequest } from "./types/LongRunningHandlerRequest";
 import dayjs from "dayjs";
-import { RateLimit } from 'async-sema'
-import sleep from "./util/sleep";
 
 export type RESTHandlerOptions = {
   /**
@@ -48,6 +48,11 @@ export type RESTHandlerOptions = {
    * Name of the queue to be stored in Redis
    */
   queueName?: string
+  /**
+   * Options for PQueue that holds enqueues all requests
+   * See https://github.com/sindresorhus/p-queue
+   */
+   pqueueOptions?: Options<PriorityQueue, DefaultAddOptions>
    /**
     * Upon hitting the threshold for maximum invalid requests, or hitting a global rate limit via
     * Cloudflare, clear the queue so they don't get processed. This is useful for a distributed
@@ -148,10 +153,19 @@ class RESTHandler extends EventEmitter {
    * a global rate limit is hit
    */
   private readonly globalBlockDurationMultiple: number
+  /**
+   * Stores all API requests to be executed at a maximum
+   * rate of 14 requests per second
+   */
+  private readonly queue: PQueue;
+  /**
+   * Options for PQueue that holds enqueues all requests
+   * See https://github.com/sindresorhus/p-queue
+   */
+  pqueueOptions?: Options<PriorityQueue, DefaultAddOptions>
   private queueBlockTimer: NodeJS.Timer|null = null;
   private readonly userOptions: RESTHandlerOptions
   private globallyBlockedUntil?: Date
-  private readonly rateLimit: ReturnType<typeof RateLimit>
 
   constructor (options?: RESTHandlerOptions) {
     super()
@@ -159,7 +173,11 @@ class RESTHandler extends EventEmitter {
     this.invalidRequestsThreshold = options?.invalidRequestsThreshold || 5000
     this.globalBlockDurationMultiple = options?.globalBlockDurationMultiple || 1
 
-    this.rateLimit = RateLimit(this.userOptions.maxRequestsPerSecond || 30)
+    this.queue = new PQueue({
+      interval: 1000,
+      intervalCap: this.userOptions.maxRequestsPerSecond || 30,
+      ...options?.pqueueOptions
+    })
 
     if (process.env.NODE_ENV !== 'test') {
       if (options?.delayOnInvalidThreshold !== false) {
@@ -171,6 +189,10 @@ class RESTHandler extends EventEmitter {
           this.invalidRequestsCount = 0
         }, 1000 * 60 * 10)
       }
+
+      this.queue.on('next', () => {
+        this.emit('next', this.queue.size, this.queue.pending)
+      })
     }
   }
 
@@ -291,17 +313,17 @@ class RESTHandler extends EventEmitter {
         clearTimeout(this.queueBlockTimer)
       }
       
-      // this.queue.pause()
+      this.queue.pause()
 
       if (this.userOptions.clearQueueAfterGlobalBlock) {
-        // this.queue.clear()
+        this.queue.clear()
       }
 
       this.globallyBlockedUntil = dayjs().add(blockDuration, 'ms').toDate()
       this.emit('globalBlock', blockType, blockDuration)
 
       this.queueBlockTimer = setTimeout(() => {
-        // this.queue.start()
+        this.queue.start()
         this.queueBlockTimer = null
         this.globallyBlockedUntil = undefined
         this.emit('globalRestore', blockType)
@@ -375,15 +397,7 @@ class RESTHandler extends EventEmitter {
    * @returns node-fetch response
    */
   public async fetch (route: string, options: RequestOptions): Promise<FetchResponse> {
-    if (this.globallyBlockedUntil) {
-      // wait until the global block is over
-      const now = new Date().getTime()
-      const timeLeft = this.globallyBlockedUntil.getTime() - now
-      if (timeLeft > 0) {
-        await sleep(timeLeft)
-      }
-    }
-
+    
     const { requestTimeoutRetries } = this.userOptions
     const apiRequest = new APIRequest(route, {
       maxRetries: requestTimeoutRetries,
@@ -392,13 +406,27 @@ class RESTHandler extends EventEmitter {
     const url = apiRequest.route
     const bucket = this.getBucketForUrl(url)
 
-    options.debugHistory?.push(`Retrieved bucket ${bucket.id}, adding to global queue. Current block ${(this.globallyBlockedUntil?.getTime() || 0) / 1000}`)
-    await this.rateLimit()
-    options.debugHistory?.push(`p-queue job started, enqueuing into bucket ${bucket.id}`)
+    
+    const longRunningTimeout = setTimeout(() => {
+      this.emit('longRunningHandlerRequest', {
+        executedApiRequest: apiRequest.hasSucceeded() !== undefined,
+        globalBlockedUntil: this.globallyBlockedUntil || null,
+        globalQueueLength: this.queue.size
+      })
+    }, 1000 * 60 * 10)
+    
+    options.debugHistory?.push(`Retrieved bucket ${bucket.id}, adding to global queue. Current queue length: ${this.queue.size}. Current block ${(this.globallyBlockedUntil?.getTime() || 0) / 1000}`)
 
-    return bucket.enqueue(apiRequest, {
-      debugHistory: options.debugHistory
+    const result = await this.queue.add(async () => {
+      options.debugHistory?.push(`p-queue job started, enqueuing into bucket ${bucket.id}`)
+
+      return await bucket.enqueue(apiRequest, {
+        debugHistory: options.debugHistory
+      })
     })
+
+    clearTimeout(longRunningTimeout)
+    return result
   }
 }
 

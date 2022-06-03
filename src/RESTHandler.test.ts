@@ -39,7 +39,7 @@ describe('RESTHandler', () => {
       expect(allEventsEmitted).not.toContain('LongRunningBucketRequest')
     })
 
-    it.skip('emits long running request if a job is hung up', async () => {
+    it('emits long running request if a job is hung up', async () => {
       jest.spyOn(APIRequest.prototype, 'execute')
         .mockImplementation(async () => {
           return new Promise<void>((resolve) => {
