@@ -162,7 +162,11 @@ class RESTHandler extends EventEmitter {
    * Stores all API requests to be executed at a maximum
    * rate of 14 requests per second
    */
-  private readonly queue: RateLimitedQueue<{ apiRequest: APIRequest, debugHistory?: string[] }, FetchResponse>;
+  private readonly queue: RateLimitedQueue<{
+    id: number,
+    apiRequest: APIRequest,
+    debugHistory?: string[]
+  }, FetchResponse>;
   /**
    * Options for PQueue that holds enqueues all requests
    * See https://github.com/sindresorhus/p-queue
@@ -178,7 +182,7 @@ class RESTHandler extends EventEmitter {
     this.invalidRequestsThreshold = options?.invalidRequestsThreshold || 5000
     this.globalBlockDurationMultiple = options?.globalBlockDurationMultiple || 1
 
-    this.queue = new RateLimitedQueue(({apiRequest, debugHistory}) => {
+    this.queue = new RateLimitedQueue(({id, apiRequest, debugHistory}) => {
       const bucket = this.getBucketForUrl(apiRequest.route)
       debugHistory?.push(`p-queue job started, enqueuing into bucket ${bucket.id}`)
 
@@ -428,6 +432,7 @@ class RESTHandler extends EventEmitter {
     options.debugHistory?.push(`Retrieved bucket ${bucket.id}, adding to global queue. Current queue length: ${this.queue.size}, pending: ${this.queue.pending}. Current block ${(this.globallyBlockedUntil?.getTime() || 0) / 1000}`)
 
     const result = await this.queue.add({
+      id: apiRequest.id,
       apiRequest,
       debugHistory: options.debugHistory,
     })

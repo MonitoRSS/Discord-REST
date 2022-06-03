@@ -6,10 +6,16 @@ interface Options {
   maxPerSecond: number
 }
 
-export class RateLimitedQueue<Input, Response> {
+interface InputType {
+  id: string|number
+  debugHistory?: string[]
+}
+
+export class RateLimitedQueue<Input extends InputType, Response> {
   ratelimit: ReturnType<typeof RateLimit>
   queue: queueAsPromised<Input, Response>
   isPaused = false
+  pendingItemIds: Set<string|number> = new Set()
 
   constructor(
     private readonly worker: (item: Input) => Promise<Response>,
@@ -18,7 +24,9 @@ export class RateLimitedQueue<Input, Response> {
     this.ratelimit = RateLimit(options.maxPerSecond)
     
     const wrappedWorker = async (item: Input) => {
+      item.debugHistory?.push('RLQ: Waiting for rate limit')
       await this.ratelimit()
+      item.debugHistory?.push('RLQ: Starting work')
 
       return this.worker(item)
     }
@@ -27,6 +35,7 @@ export class RateLimitedQueue<Input, Response> {
   }
 
   async add(item: Input): Promise<Response> {
+    item.debugHistory?.push('RLQ: Added item to rate limited queue')
     const result = await this.queue.push(item)
 
     return result
