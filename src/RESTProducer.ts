@@ -5,6 +5,7 @@ import { getQueueConfig, getQueueName, getQueueRPCReplyName } from './constants/
 import { QUEUE_PRIORITY } from './constants/queue-priority';
 import dayjs from 'dayjs'
 import utc from 'dayjs/plugin/utc'
+import EventEmitter from 'events';
 
 dayjs.extend(utc)
 
@@ -28,7 +29,7 @@ declare interface RESTProducer {
   on(event: 'error', listener: (err: Error) => void): this
 }
 
-class RESTProducer {
+class RESTProducer extends EventEmitter {
   private rabbitmq: {
     connection: amqp.Connection,
     channel: amqp.Channel,
@@ -37,7 +38,9 @@ class RESTProducer {
   constructor(
     private readonly rabbitmqUri: string,
     private readonly options: Options
-  ) {}
+  ) {
+    super()
+  }
 
   public async initialize(): Promise<void> {
     // const amqpClient = // new AMQPClient(this.rabbitmqUri)
