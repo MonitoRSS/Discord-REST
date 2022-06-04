@@ -1,6 +1,6 @@
 {
   "name": "@synzen/discord-rest",
-  "version": "0.6.26-beta.34",
+  "version": "0.6.26-beta.35",
   "description": "",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
