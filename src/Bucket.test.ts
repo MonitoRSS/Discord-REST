@@ -102,6 +102,7 @@ describe('Bucket', () => {
       expect(result).toEqual(-1)
     })
   })
+
   describe('static isGloballyBlocked', () => {
     it('returns true correctly', () => {
       const headers = {
@@ -115,6 +116,7 @@ describe('Bucket', () => {
       expect(result).toEqual(false)
     })
   })
+
   describe('static getGlobalBlockDurationMs', () => {
     it('returns the retry after header number', () => {
       const retryAfterMs = '2000'
@@ -133,6 +135,7 @@ describe('Bucket', () => {
       expect(result).toEqual(-1)
     })
   })
+
   describe('getBlockedDuration', () => {
     it('returns the global block duration if there is a global block', () => {
       const globalBlockDuration = 100
@@ -157,6 +160,7 @@ describe('Bucket', () => {
       expect(result).toEqual(bucketBlockDuration)
     })
   })
+
   describe('block', () => {
     it('works', () => {
       const blockDuration = 1000
@@ -168,6 +172,7 @@ describe('Bucket', () => {
       expect(bucket.blockedUntil).toBeUndefined()
     })
   })
+
   describe('copyBlockTo', () => {
     it('works', () => {
       const nowDate = new Date('2020-01-01')
@@ -184,6 +189,7 @@ describe('Bucket', () => {
       expect(otherBucket.block).toHaveBeenCalledWith(expectedBlockDuration)
     })
   })
+
   describe('enqueue', () => {
     it('enqueues synchronously', async () => {
       const bucket = new Bucket('id')
