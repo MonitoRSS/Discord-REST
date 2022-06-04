@@ -5,6 +5,7 @@ import { createBucketDebug } from './util/debug';
 import { IncomingHttpHeaders } from 'http';
 import { FetchResponse } from './types/FetchResponse';
 import { LongRunningBucketRequest } from './types/LongRunningBucketRequest';
+import { AbortError } from './errors/AbortError';
 
 declare interface Bucket {
   emit(event: 'recognizeURLBucket', url: string, bucketId: string): boolean
@@ -50,6 +51,7 @@ class Bucket extends EventEmitter {
    * The queue of pending API requests
    */
   private readonly queue: APIRequest[] = []
+  private readonly queueItemIds = new Set<number>()
   /**
    * Debug logger
    */
@@ -264,7 +266,7 @@ class Bucket extends EventEmitter {
   /**
    * Wait for previous API requests to finish
    */
-  private async waitForRequest (apiRequest: APIRequest, options?: {
+  async waitForRequest (apiRequest: APIRequest, options?: {
     debugHistory?: string[]
   }): Promise<void> {
     if (!apiRequest) {
@@ -308,6 +310,7 @@ class Bucket extends EventEmitter {
 
     options?.debugHistory?.push(`Bucket ${this.id} has pushed API request into queue`)
 
+    this.queueItemIds.add(apiRequest.id)
     this.queue.push(apiRequest)
     // eslint-disable-next-line no-async-promise-executor
     return new Promise(async (resolve, reject) => {
@@ -319,11 +322,16 @@ class Bucket extends EventEmitter {
          */
         await this.waitForRequest(previousRequest, options)
 
+        if (!this.queueItemIds.has(apiRequest.id)) {
+          throw new AbortError('Request was aborted after queue was cleared')
+        }
+
         options?.debugHistory?.push(`Running execute now`)
         const result = await this.execute(apiRequest, options)
 
         options?.debugHistory?.push(`Execution has finished, removing from queue`)
 
+        this.queueItemIds.delete(apiRequest.id)
         this.queue.splice(this.queue.indexOf(apiRequest), 1)
         /**
          * If the queue is empty, emit an event that allows the
@@ -348,9 +356,17 @@ class Bucket extends EventEmitter {
   }
 
   /**
+   * Clear all requests from the queue.
+   */
+  clear(): void {
+    this.queue.length = 0
+    this.queueItemIds.clear()
+  }
+
+  /**
    * Execute a APIRequest by fetching it
    */
-  private async execute (apiRequest: APIRequest, options?: {
+  async execute (apiRequest: APIRequest, options?: {
     debugHistory?: string[]
   }): Promise<FetchResponse> {
     options?.debugHistory?.push(`Execution process started...`)
@@ -381,7 +397,7 @@ class Bucket extends EventEmitter {
    * Mark an API request as finished to proceed with the queue
    * for other enqueued requests
    */
-  private finishHandling (apiRequest: APIRequest): void {
+  finishHandling (apiRequest: APIRequest): void {
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-ignore
     this.emit(`finishedRequest-${apiRequest.id}`)

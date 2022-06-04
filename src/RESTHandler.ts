@@ -329,7 +329,7 @@ class RESTHandler extends EventEmitter {
       this.queue.pause()
 
       if (this.userOptions.clearQueueAfterGlobalBlock) {
-        this.queue.clear()
+        this.clearBuckets()
       }
 
       this.globallyBlockedUntil = dayjs().add(blockDuration, 'ms').toDate()
@@ -362,6 +362,12 @@ class RESTHandler extends EventEmitter {
           bucket.block(durationMs)
         }
       }
+    })
+  }
+
+  public clearBuckets(): void {
+    this.buckets.forEach((bucket) => {
+      bucket.clear()
     })
   }
 
