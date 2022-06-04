@@ -10,6 +10,7 @@ import utc from 'dayjs/plugin/utc'
 import { FetchResponse } from "./types/FetchResponse";
 import { LongRunningBucketRequest } from "./types/LongRunningBucketRequest";
 import { LongRunningHandlerRequest } from "./types/LongRunningHandlerRequest";
+import { AbortError } from "./errors/AbortError";
 dayjs.extend(utc)
 
 interface ConsumerOptions {
@@ -227,11 +228,16 @@ class RESTConsumer extends EventEmitter {
         }
 
         this.emit('jobCompleted', data, response)
+        channel.ack(message)
       } catch (err) {
-        const message = (err as Error).message
+        if ((err as Error).name === AbortError.name) {
+          channel.nack(message)
+        }
+
+        const errorMessage = (err as Error).message
         response = {
           state: 'error',
-          message
+          message: errorMessage
         }
         this.emit('jobError', err as Error, data)
       }
@@ -246,8 +252,6 @@ class RESTConsumer extends EventEmitter {
           this.emit('err', new Error(`Failed to send RPC response message: ${(err as Error).message}`))
         }
       }
-
-      channel.ack(message)
     }, { noAck: false })
 
     this.rabbitmq.consumerTag = consumer.consumerTag
