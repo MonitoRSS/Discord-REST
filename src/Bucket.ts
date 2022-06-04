@@ -11,14 +11,14 @@ declare interface Bucket {
   emit(event: 'finishedAll'): boolean
   emit(event: 'rateLimit', apiRequest: APIRequest, blockedDurationMs: number): boolean
   emit(event: 'globalRateLimit', apiRequest: APIRequest, blockedDurationMs: number): boolean
-  emit(event: 'cloudflareRateLimit', apiRequest: APIRequest, blockedDurationMs: number): boolean
+  emit(event: 'cloudflareRateLimit', apiRequest: APIRequest, blockedDurationMs: number, debugDetails: Record<string, any>): boolean
   emit(event: 'invalidRequest', apiRequest: APIRequest): boolean;
   emit(event: 'LongRunningBucketRequest', details: LongRunningBucketRequest): boolean;
   on(event: 'recognizeURLBucket', listener: (url: string, bucketId: string) => void): this
   on(event: 'finishedAll', listener: () => void): this
   on(event: 'rateLimit', listener: (apiRequest: APIRequest, blockedDurationMs: number) => void): this
   on(event: 'globalRateLimit', listener: (apiRequest: APIRequest, blockedDurationMs: number) => void): this
-  on(event: 'cloudflareRateLimit', listener: (apiRequest: APIRequest, blockedDurationMs: number) => void): this
+  on(event: 'cloudflareRateLimit', listener: (apiRequest: APIRequest, blockedDurationMs: number, debugDetails: Record<string, any>) => void): this
   on(event: 'invalidRequest', listener: (apiRequest: APIRequest) => void): this
   on(event: 'LongRunningBucketRequest', listener: (details: LongRunningBucketRequest) => void): this;
 }
@@ -407,7 +407,9 @@ class Bucket extends EventEmitter {
     if (blockedDurationMs === -1) {
       // Typically when the IP has been blocked by Cloudflare. Wait 3 hours if this happens.
       blockedDurationMs = 1000 * 60 * 60 * 3
-      this.emit('cloudflareRateLimit', apiRequest, blockedDurationMs)
+      this.emit('cloudflareRateLimit', apiRequest, blockedDurationMs, {
+        headers
+      })
     }
 
     /**

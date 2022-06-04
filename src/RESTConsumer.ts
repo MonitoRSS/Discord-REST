@@ -68,7 +68,7 @@ export interface JobResponseError {
 
 
 declare interface RESTConsumer {
-  emit(event: 'globalBlock', blockType: GLOBAL_BLOCK_TYPE, blockedDurationMs: number): boolean
+  emit(event: 'globalBlock', blockType: GLOBAL_BLOCK_TYPE, blockedDurationMs: number, debugDetails?: Record<string, any>): boolean
   emit(event: 'globalRestore', blockType: GLOBAL_BLOCK_TYPE): boolean
   emit(event: 'jobError', error: Error | RequestTimeoutError, job: JobData): boolean
   emit(event: 'err', error: Error): boolean
@@ -77,7 +77,7 @@ declare interface RESTConsumer {
   emit(event: 'LongRunningBucketRequest', details: LongRunningBucketRequest): boolean
   emit(event: 'longRunningHandlerRequest', details: LongRunningHandlerRequest): boolean
   emit(event: 'next', queueSize: number, pending: number): boolean
-  on(event: 'globalBlock', listener: (blockType: GLOBAL_BLOCK_TYPE, blockedDurationMs: number) => void): this
+  on(event: 'globalBlock', listener: (blockType: GLOBAL_BLOCK_TYPE, blockedDurationMs: number, debugDetails?: Record<string, any>) => void): this
   on(event: 'globalRestore', listener: (blockType: GLOBAL_BLOCK_TYPE) => void): this
   on(event: 'jobError', listener: (err: Error | RequestTimeoutError, job: JobData) => void): this
   on(event: 'err', listener: (err: Error) => void): this
@@ -127,7 +127,7 @@ class RESTConsumer extends EventEmitter {
       clearQueueAfterGlobalBlock: true
     })
 
-    this.handler.on('globalBlock', (blockType, durationMs) => {
+    this.handler.on('globalBlock', (blockType, durationMs, debugDetails) => {
       if (blockType !== GLOBAL_BLOCK_TYPE.CLOUDFLARE_RATE_LIMIT) {
         /**
          * We should only stop the consumer if the global block is a cloudflare rate limit. Cloudflare
@@ -137,7 +137,7 @@ class RESTConsumer extends EventEmitter {
         return;
       }
 
-      this.emit('globalBlock', blockType, durationMs)
+      this.emit('globalBlock', blockType, durationMs, debugDetails)
       this.stopConsumer()
     })
 

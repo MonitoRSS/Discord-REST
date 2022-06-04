@@ -68,7 +68,7 @@ export type RESTHandlerOptions = {
 
 
 declare interface RESTHandler {
-  emit(event: 'globalBlock', type: GLOBAL_BLOCK_TYPE, blockedDurationMs: number): boolean
+  emit(event: 'globalBlock', type: GLOBAL_BLOCK_TYPE, blockedDurationMs: number, debugDetails?: Record<string, any>): boolean
   emit(event: 'globalRestore', type: GLOBAL_BLOCK_TYPE): boolean
   emit(event: 'rateLimit', apiRequest: APIRequest, blockedDurationMs: number): boolean
   emit(event: 'invalidRequest', apiRequest: APIRequest, countSoFar: number): boolean
@@ -80,7 +80,7 @@ declare interface RESTHandler {
    * When a global block is in place. This can be from cloudflare rate limits, invalid requests
    * threshold, and global rate limits (from Discord).
    */
-  on(event: 'globalBlock', listener: (type: GLOBAL_BLOCK_TYPE, blockedDurationMs: number) => void): this
+  on(event: 'globalBlock', listener: (type: GLOBAL_BLOCK_TYPE, blockedDurationMs: number, debugDetails?: Record<string, any>) => void): this
   /**
    * When a global block has been expired
    */
@@ -240,10 +240,11 @@ class RESTHandler extends EventEmitter {
       this.increaseInvalidRequestCount()
       this.emit('invalidRequest', apiRequest, this.invalidRequestsCount)
     })
-    bucket.on('cloudflareRateLimit', (apiRequest: APIRequest, durationMs) => {
+    bucket.on('cloudflareRateLimit', (apiRequest: APIRequest, durationMs, debugDetails) => {
       this.blockGloballyByDuration({
         durationMs,
-        blockType: GLOBAL_BLOCK_TYPE.CLOUDFLARE_RATE_LIMIT
+        blockType: GLOBAL_BLOCK_TYPE.CLOUDFLARE_RATE_LIMIT,
+        debugDetails,
       })
     })
     bucket.on('LongRunningBucketRequest', details => {
@@ -311,10 +312,12 @@ class RESTHandler extends EventEmitter {
    */
      private blockGloballyByDuration ({
        durationMs,
-       blockType
+       blockType,
+       debugDetails
      }: {
        durationMs: number,
-       blockType: GLOBAL_BLOCK_TYPE
+       blockType: GLOBAL_BLOCK_TYPE,
+       debugDetails?: Record<string, any>
      }) {
       const blockDuration = durationMs * this.globalBlockDurationMultiple
       this.blockBucketsByDuration(blockDuration)
@@ -330,7 +333,7 @@ class RESTHandler extends EventEmitter {
       }
 
       this.globallyBlockedUntil = dayjs().add(blockDuration, 'ms').toDate()
-      this.emit('globalBlock', blockType, blockDuration)
+      this.emit('globalBlock', blockType, blockDuration, debugDetails)
 
       this.queueBlockTimer = setTimeout(() => {
         this.queue.start()
