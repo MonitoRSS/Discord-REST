@@ -17,9 +17,15 @@ interface Options {
   autoDeleteQueues?: boolean
 }
 
+
 interface RequestOptions extends RequestInit {
   rpc?: boolean
   priority?: QUEUE_PRIORITY
+}
+
+declare interface RESTProducer {
+  emit(event: 'error', err: Error): boolean
+  on(event: 'error', listener: (err: Error) => void): this
 }
 
 class RESTProducer {
@@ -41,9 +47,27 @@ class RESTProducer {
       autoDeleteQueues: this.options.autoDeleteQueues || false
     }))
 
+    connection.once('error', this.onErrorHandler)
+    channel.once('error', this.onErrorHandler)
+
     this.rabbitmq = {
       channel,
       connection,
+    }
+  }
+
+  public async onErrorHandler(err: Error): Promise<void> {
+    this.emit('error', err)
+
+    try {
+      await this.close()
+
+      this.rabbitmq?.connection.removeListener('error', this.onErrorHandler)
+      this.rabbitmq?.channel.removeListener('error', this.onErrorHandler)
+      
+      await this.initialize()
+    } catch (err) {
+      this.emit('error', new Error(`Failed to reinitialize RESTProducer after error: ${(err as Error).message}`))
     }
   }
 
