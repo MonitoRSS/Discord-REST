@@ -52,11 +52,13 @@ export class RateLimitedQueue<Input extends InputType, Response> {
 
   pause(): void {
     this.isPaused = true
-    // eslint-disable-next-line @typescript-eslint/no-empty-function
-    this.sem.take(this.sem.capacity, () => {})
+
     if (this.autoClearingInterval) {
       clearInterval(this.autoClearingInterval)
     }
+    
+    // eslint-disable-next-line @typescript-eslint/no-empty-function
+    this.sem.take(this.sem.capacity - this.sem.current, () => {})
   }
 
   resume(): void {
