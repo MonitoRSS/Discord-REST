@@ -12,7 +12,7 @@ interface InputType {
 export class RateLimitedQueue<Input extends InputType, Response> {
   isPaused = false
   pendingItemIds: Set<string|number> = new Set()
-  sem: sem.Semaphore
+  // sem: sem.Semaphore
   totalSize = 0
   pendingSize = 0
   autoClearingInterval: NodeJS.Timeout | null = null
@@ -22,32 +22,32 @@ export class RateLimitedQueue<Input extends InputType, Response> {
     private readonly options: Options
   ) {
     // this.ratelimit = RateLimit(options.maxPerSecond)
-    this.sem = sem(options.maxPerSecond)
+    // this.sem = sem(options.maxPerSecond)
 
-    if (process.env.NODE_ENV !== 'test') {
-      this.autoClearingInterval = this.createAutoClearingInterval()
-    }
+    // if (process.env.NODE_ENV !== 'test') {
+    //   this.autoClearingInterval = this.createAutoClearingInterval()
+    // }
   }
 
-  add(item: Input): Promise<Response> {
+  async add(item: Input): Promise<Response> {
     this.totalSize++
     item.debugHistory?.push('RLQ: Added item to rate limited queue')
     // const result = await this.queue.push(item)
-    return new Promise<Response>((resolve, reject) => {
-      this.sem.take(async () => {
-        try {
-          item.debugHistory?.push('RLQ: Starting worker')
-          this.pendingSize++
-          const result = await this.worker(item)
-          resolve(result)
-        } catch (err) {
-          reject(err)
-        } finally {
-          this.totalSize--
-          this.pendingSize--
-        }
-      })
-    })
+    // return new Promise<Response>((resolve, reject) => {
+    //   this.sem.take(async () => {
+    //     try {
+    //       item.debugHistory?.push('RLQ: Starting worker')
+    //       this.pendingSize++
+    return this.worker(item)
+    //       resolve(result)
+    //     } catch (err) {
+    //       reject(err)
+    //     } finally {
+    //       this.totalSize--
+    //       this.pendingSize--
+    //     }
+    //   })
+    // })
   }
 
   pause(): void {
@@ -58,18 +58,18 @@ export class RateLimitedQueue<Input extends InputType, Response> {
     }
     
     // eslint-disable-next-line @typescript-eslint/no-empty-function
-    this.sem.take(this.sem.capacity - this.sem.current, () => {})
+    // this.sem.take(this.sem.capacity - this.sem.current, () => {})
   }
 
   resume(): void {
     this.isPaused = false
-    this.sem.leave(this.sem.current)
+    // this.sem.leave(this.sem.current)
 
     if (this.autoClearingInterval) {
       clearInterval(this.autoClearingInterval)
     }
 
-    this.autoClearingInterval = this.createAutoClearingInterval()
+    // this.autoClearingInterval = this.createAutoClearingInterval()
   }
   
   start(): void {
@@ -87,12 +87,12 @@ export class RateLimitedQueue<Input extends InputType, Response> {
     return this.pendingSize
   }
 
-  private createAutoClearingInterval() {
-    return setInterval(async () => {
-      if (!this.sem.current) {
-        return
-      }
-      this.sem.leave(this.sem.current)
-    }, 1000)
-  }
+  // private createAutoClearingInterval() {
+  //   return setTimeout(() => {
+  //     if (!this.sem.current) {
+  //       return
+  //     }
+  //     this.sem.leave(this.sem.capacity)
+  //   }, 1000)
+  // }
 }
