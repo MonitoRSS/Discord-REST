@@ -1,12 +1,11 @@
 import APIRequest from "./APIRequest"
 import Bucket from "./Bucket"
 import RESTHandler from "./RESTHandler"
-import { mocked } from 'ts-jest/utils'
 import { FetchResponse } from "./types/FetchResponse"
 
 jest.mock('./APIRequest')
 
-const APIRequestMocked = mocked(APIRequest)
+const APIRequestMocked = jest.mocked(APIRequest)
 
 const okResponse = {
   status: 200,
