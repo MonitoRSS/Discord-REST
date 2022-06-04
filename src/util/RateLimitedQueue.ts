@@ -1,3 +1,4 @@
+import { RateLimit } from 'async-sema'
 import sem from 'semaphore'
 
 interface Options {
@@ -16,12 +17,13 @@ export class RateLimitedQueue<Input extends InputType, Response> {
   totalSize = 0
   pendingSize = 0
   autoClearingInterval: NodeJS.Timeout | null = null
+  ratelimit: ReturnType<typeof RateLimit>
 
   constructor(
     private readonly worker: (item: Input) => Promise<Response>,
     private readonly options: Options
   ) {
-    // this.ratelimit = RateLimit(options.maxPerSecond)
+    this.ratelimit = RateLimit(options.maxPerSecond)
     // this.sem = sem(options.maxPerSecond)
 
     // if (process.env.NODE_ENV !== 'test') {
@@ -38,6 +40,9 @@ export class RateLimitedQueue<Input extends InputType, Response> {
     //     try {
     //       item.debugHistory?.push('RLQ: Starting worker')
     //       this.pendingSize++
+    await this.ratelimit()
+    item.debugHistory?.push('RLQ: Started work')
+
     return this.worker(item)
     //       resolve(result)
     //     } catch (err) {
