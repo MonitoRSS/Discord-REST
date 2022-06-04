@@ -1,6 +1,4 @@
-import { RateLimit } from 'async-sema'
-import fastq from 'fastq';
-import type { queueAsPromised } from "fastq";
+import sem from 'semaphore'
 
 interface Options {
   maxPerSecond: number
@@ -12,58 +10,86 @@ interface InputType {
 }
 
 export class RateLimitedQueue<Input extends InputType, Response> {
-  ratelimit: ReturnType<typeof RateLimit>
-  queue: queueAsPromised<Input, Response>
   isPaused = false
   pendingItemIds: Set<string|number> = new Set()
+  sem: sem.Semaphore
+  totalSize = 0
+  pendingSize = 0
+  autoClearingInterval: NodeJS.Timeout | null = null
 
   constructor(
     private readonly worker: (item: Input) => Promise<Response>,
     private readonly options: Options
   ) {
-    this.ratelimit = RateLimit(options.maxPerSecond)
-    
-    const wrappedWorker = async (item: Input) => {
-      item.debugHistory?.push('RLQ: Waiting for rate limit')
-      await this.ratelimit()
-      item.debugHistory?.push('RLQ: Starting work')
+    // this.ratelimit = RateLimit(options.maxPerSecond)
+    this.sem = sem(options.maxPerSecond)
 
-      return this.worker(item)
+    if (process.env.NODE_ENV !== 'test') {
+      this.autoClearingInterval = this.createAutoClearingInterval()
     }
-
-    this.queue = fastq.promise<never, Input, Response>(wrappedWorker, 5000)
   }
 
-  async add(item: Input): Promise<Response> {
+  add(item: Input): Promise<Response> {
+    this.totalSize++
     item.debugHistory?.push('RLQ: Added item to rate limited queue')
-    const result = await this.queue.push(item)
-
-    return result
+    // const result = await this.queue.push(item)
+    return new Promise<Response>((resolve, reject) => {
+      this.sem.take(async () => {
+        try {
+          this.pendingSize++
+          const result = await this.worker(item)
+          resolve(result)
+        } catch (err) {
+          reject(err)
+        } finally {
+          this.totalSize--
+          this.pendingSize--
+        }
+      })
+    })
   }
 
   pause(): void {
     this.isPaused = true
-    this.queue.pause()
+    // eslint-disable-next-line @typescript-eslint/no-empty-function
+    this.sem.take(this.sem.capacity, () => {})
+    if (this.autoClearingInterval) {
+      clearInterval(this.autoClearingInterval)
+    }
   }
 
   resume(): void {
     this.isPaused = false
-    this.queue.resume()
+    this.sem.leave(this.sem.current)
+
+    if (this.autoClearingInterval) {
+      clearInterval(this.autoClearingInterval)
+    }
+
+    this.autoClearingInterval = this.createAutoClearingInterval()
   }
   
   start(): void {
     this.resume()
   }
 
-  clear(): void {
-    this.queue.kill()
-  }
+  // eslint-disable-next-line @typescript-eslint/no-empty-function
+  clear(): void {}
 
   get size(): number {
-    return this.queue.length()
+    return this.totalSize
   }
 
   get pending(): number {
-    return 0
+    return this.pendingSize
+  }
+
+  private createAutoClearingInterval() {
+    return setInterval(() => {
+      if (!this.sem.current) {
+        return
+      }
+      this.sem.leave(this.sem.current)
+    }, 1000)
   }
 }
