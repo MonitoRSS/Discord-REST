@@ -158,18 +158,7 @@ class RESTConsumer extends EventEmitter {
       this.emit('idle')
     })
 
-    const connection = await amqp.connect(this.rabbitmqUri)
-    const channel = await connection.createChannel()
-    const queueName = getQueueName(this.consumerOptions.clientId)
-    await channel.assertQueue(queueName, getQueueConfig({
-      autoDeleteQueues: this.consumerOptions.autoDeleteQueues || false
-    }))
-
-    this.rabbitmq = {
-      channel,
-      connection,
-    }
-
+    await this.establishConnection()
     await this.startConsumer()
   }
 
@@ -178,7 +167,12 @@ class RESTConsumer extends EventEmitter {
       return
     }
 
+    if (this.rabbitmq.consumerTag) {
+      await this.rabbitmq.channel.cancel(this.rabbitmq.consumerTag)
+    }
+    this.rabbitmq.channel.removeListener('error', this.onConnectionError)
     await this.rabbitmq.channel.close()
+    this.rabbitmq.connection.removeListener('error', this.onConnectionError)
     await this.rabbitmq.connection.close()
   }
 
@@ -254,7 +248,7 @@ class RESTConsumer extends EventEmitter {
       }
 
       channel.ack(message)
-    }, { noAck: false })    
+    }, { noAck: false })
 
     this.rabbitmq.consumerTag = consumer.consumerTag
   }
@@ -272,6 +266,33 @@ class RESTConsumer extends EventEmitter {
 
     await this.rabbitmq.channel.cancel(this.rabbitmq.consumerTag)
     this.rabbitmq.consumerTag = undefined
+  }
+
+  private async restartConnection() {
+    await this.close()
+    await this.establishConnection()
+  }
+
+  private async establishConnection() {
+    const connection = await amqp.connect(this.rabbitmqUri)
+    const channel = await connection.createChannel()
+    const queueName = getQueueName(this.consumerOptions.clientId)
+    await channel.assertQueue(queueName, getQueueConfig({
+      autoDeleteQueues: this.consumerOptions.autoDeleteQueues || false
+    }))
+
+    connection.once('error', this.onConnectionError)
+    channel.once('error', this.onConnectionError)
+
+    this.rabbitmq = {
+      channel,
+      connection,
+    }
+  }
+  
+  private async onConnectionError(error: Error) {
+    this.emit('err', new Error(`RabbitMQ connection or channel error: ${(error as Error).message}. Restarting connection.`))
+    await this.restartConnection()
   }
 
   private async processJobData(data: JobData) {
