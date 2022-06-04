@@ -36,6 +36,7 @@ export class RateLimitedQueue<Input extends InputType, Response> {
     return new Promise<Response>((resolve, reject) => {
       this.sem.take(async () => {
         try {
+          item.debugHistory?.push('RLQ: Starting worker')
           this.pendingSize++
           const result = await this.worker(item)
           resolve(result)
