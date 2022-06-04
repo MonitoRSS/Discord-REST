@@ -86,7 +86,7 @@ export class RateLimitedQueue<Input extends InputType, Response> {
   }
 
   private createAutoClearingInterval() {
-    return setInterval(() => {
+    return setInterval(async () => {
       if (!this.sem.current) {
         return
       }
