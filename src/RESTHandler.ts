@@ -328,7 +328,8 @@ class RESTHandler extends EventEmitter {
       
       this.queue.pause()
 
-      if (this.userOptions.clearQueueAfterGlobalBlock) {
+      if (this.userOptions.clearQueueAfterGlobalBlock && blockType === GLOBAL_BLOCK_TYPE.CLOUDFLARE_RATE_LIMIT) {
+        // Other rate limits generally have short retry times. Only Cloudflare will generally have 1+ hour bans
         this.clearBuckets()
       }
 
