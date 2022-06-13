@@ -190,14 +190,6 @@ class Bucket extends EventEmitter {
       return this.getGlobalBlockDurationMs(headers)
     } else if (this.hasBucketLimits(headers)) {
       return this.getBucketBlockDurationMs(headers, ignoreRemaining)
-    } else if (headers[Bucket.constants.RETRY_AFTER]) {
-      // This should still returned on a cloudflare block
-      const count = Number(headers[Bucket.constants.RETRY_AFTER])
-      if (!isNaN(count)) {
-        return count * 1000
-      }
-
-      return -1
     } else {
       return -1
     }

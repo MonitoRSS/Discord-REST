@@ -1,4 +1,3 @@
-import { IncomingHttpHeaders } from "http"
 import APIRequest from "./APIRequest"
 import Bucket from "./Bucket"
 
@@ -159,46 +158,6 @@ describe('Bucket', () => {
         .mockReturnValue(false)
       const result = Bucket.getBlockedDuration({})
       expect(result).toEqual(bucketBlockDuration)
-    })
-
-    it('returns the retry-after header in ms if it is neither a discord global or bucket block', () => {
-      const retryAfterSeconds = 100
-      jest.spyOn(Bucket, 'isGloballyBlocked')
-        .mockReturnValue(false)
-      jest.spyOn(Bucket, 'hasBucketLimits')
-        .mockReturnValue(false)
-
-      const headers = {
-        [Bucket.constants.RETRY_AFTER]: String(retryAfterSeconds),
-      } as IncomingHttpHeaders
-
-      const result = Bucket.getBlockedDuration(headers)
-      expect(result).toEqual(retryAfterSeconds * 1000)
-    })
-
-    it('returns -1 if the retry header is not a number', () => {
-      const retryAfter = 'abc'
-      jest.spyOn(Bucket, 'isGloballyBlocked')
-        .mockReturnValue(false)
-      jest.spyOn(Bucket, 'hasBucketLimits')
-        .mockReturnValue(false)
-
-      const headers = {
-        [Bucket.constants.RETRY_AFTER]: retryAfter,
-      } as IncomingHttpHeaders
-
-      const result = Bucket.getBlockedDuration(headers)
-      expect(result).toEqual(-1)
-    })
-
-    it('returns -1 if there is no global block, bucket block, or retry header', () => {
-      jest.spyOn(Bucket, 'isGloballyBlocked')
-        .mockReturnValue(false)
-      jest.spyOn(Bucket, 'hasBucketLimits')
-        .mockReturnValue(false)
-
-      const result = Bucket.getBlockedDuration({})
-      expect(result).toEqual(-1)
     })
   })
 
