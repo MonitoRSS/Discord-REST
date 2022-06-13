@@ -42,3 +42,4 @@ yarn.lock
 
 src/discord.ts
 *.sh
+*.ps1
