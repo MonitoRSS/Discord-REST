@@ -1,11 +1,11 @@
 import { JobData, JobResponse, JobResponseError } from './RESTConsumer'
 import { nanoid } from 'nanoid'
-import amqp from 'amqplib'
 import { getQueueConfig, getQueueName, getQueueRPCReplyName } from './constants/queue-configs';
 import { QUEUE_PRIORITY } from './constants/queue-priority';
 import dayjs from 'dayjs'
 import utc from 'dayjs/plugin/utc'
 import EventEmitter from 'events';
+import { BrokerAsPromised } from 'rascal'
 
 dayjs.extend(utc)
 
@@ -30,10 +30,7 @@ declare interface RESTProducer {
 }
 
 class RESTProducer extends EventEmitter {
-  private rabbitmq: {
-    connection: amqp.Connection,
-    channel: amqp.Channel,
-  } | null = null;
+  broker: BrokerAsPromised | null = null;
 
   constructor(
     private readonly rabbitmqUri: string,
@@ -43,44 +40,66 @@ class RESTProducer extends EventEmitter {
   }
 
   public async initialize(): Promise<void> {
-    // const amqpClient = // new AMQPClient(this.rabbitmqUri)
-    const connection = await amqp.connect(this.rabbitmqUri)
-    const channel = await connection.createChannel()
-    await channel.assertQueue(getQueueName(this.options.clientId), getQueueConfig({
-      autoDeleteQueues: this.options.autoDeleteQueues || false
-    }))
+    const queueName = getQueueName(this.options.clientId)
+    const rpcReplyName = getQueueRPCReplyName(this.options.clientId)
 
-    connection.once('error', this.onErrorHandler)
-    channel.once('error', this.onErrorHandler)
+    this.broker = await BrokerAsPromised.create({
+      vhosts: {
+        v1: {
+          connection: {
+            url: this.rabbitmqUri,
+          },
+          queues: {
+            [queueName]: {
+              assert: true,
+              options: getQueueConfig({
+                autoDeleteQueues: this.options.autoDeleteQueues || false,
+              }),
+            },
+            [rpcReplyName]: {
+              assert: true,
+              options: {
+                autoDelete: true,
+                exclusive: true,
+                durable: false,
+                arguments: {
+                  'x-expires': 1000 * 60 * 5 // 5 minutes
+                }
+              }
+            }
+          },
+          subscriptions: {
+            [rpcReplyName]: {
+              vhost: 'v1',
+              queue: rpcReplyName,
+              options: {
+                noAck: true,
+              }
+            }
+          },
+          publications: {
+            [queueName]: {
+              vhost: 'v1',
+              queue: queueName,
+            }
+          }
+        },
+      },
+    }, )
 
-    this.rabbitmq = {
-      channel,
-      connection,
-    }
+    this.broker.on('error', this.onErrorHandler)
   }
 
   public async onErrorHandler(err: Error): Promise<void> {
     this.emit('error', err)
-
-    try {
-      await this.close()
-
-      this.rabbitmq?.connection.removeListener('error', this.onErrorHandler)
-      this.rabbitmq?.channel.removeListener('error', this.onErrorHandler)
-      
-      await this.initialize()
-    } catch (err) {
-      this.emit('error', new Error(`Failed to reinitialize RESTProducer after error: ${(err as Error).message}`))
-    }
   }
 
   public async close(): Promise<void> {
-    if (!this.rabbitmq) {
+    if (!this.broker) {
       return
     }
-  
-    await this.rabbitmq.channel.close()
-    await this.rabbitmq.connection.close()
+
+    await this.broker.shutdown()
   }
 
   /**
@@ -97,7 +116,7 @@ class RESTProducer extends EventEmitter {
       throw new Error(`Missing route for RESTProducer enqueue`)
     }
 
-    if (!this.rabbitmq) {
+    if (!this.broker) {
       throw new Error(`RESTProducer must be initialized with initialize() before enqueue`)
     }
 
@@ -110,18 +129,14 @@ class RESTProducer extends EventEmitter {
       startTimestamp: dayjs().valueOf()
     }
 
-    await this.rabbitmq.channel.sendToQueue(
-      getQueueName(this.options.clientId),
-      Buffer.from(JSON.stringify(jobData)),
-      {
+    const publication = await this.broker.publish(getQueueName(this.options.clientId), Buffer.from(JSON.stringify(jobData)), {
+      options: {
         deliveryMode: 2,
         priority: options.priority || QUEUE_PRIORITY.LOW,
-      }
-    )
+      },
+    })
 
-    // await this.rabbitmq.queue.publish(JSON.stringify(jobData), {
-    //   deliveryMode: 2,
-    // })
+    publication.on('error', this.onErrorHandler)
   }
 
   /**
@@ -137,12 +152,11 @@ class RESTProducer extends EventEmitter {
     options: RequestInit = {},
     meta?: Record<string, unknown>
   ): Promise<JobResponse<JSONResponse> | JobResponseError> {
-    const rabbitmq = this.rabbitmq
     if (!route) {
       throw new Error(`Missing route for RESTProducer enqueue`)
     }
 
-    if (!rabbitmq) {
+    if (!this.broker) {
       throw new Error(`RESTProducer must be initialized with initialize() before enqueue`)
     }
 
@@ -155,53 +169,33 @@ class RESTProducer extends EventEmitter {
       startTimestamp: dayjs().utc().valueOf()
     }
 
-    const replyQueue = await rabbitmq.channel.assertQueue(getQueueRPCReplyName(this.options.clientId), {
-      autoDelete: true,
-      exclusive: true,
-      durable: false,
-      arguments: {
-        'x-expires': 1000 * 60 * 5 // 5 minutes
-      }
-    })
+    const subscriber = await this.broker.subscribe(getQueueRPCReplyName(this.options.clientId))
 
-    let consumerTag: string | null = null
-  
     const response = new Promise<JobResponse<JSONResponse>>(async (resolve, reject) => {
-      try {
-        const consumer = await rabbitmq.channel.consume(replyQueue.queue, async (message) => {
-          
-          if (!message || message.properties.correlationId !== jobData.id) {
-            return
-          }
+      subscriber.on('message', (message) => {
+        if (message.properties.correlationId !== jobData.id) {
+          return
+        }
 
-          try {
-            const parsedJson = JSON.parse(message.content.toString())
-            resolve(parsedJson)
-          } catch (err) {
-            reject(new Error('Failed to parse JSON from RPC response'))
-          }
-        }, {
-          noAck: true
-        })
-
-        consumerTag = consumer.consumerTag
-      } catch (err) {
-        reject(err)
-      }
+        try {
+          const parsedJson = JSON.parse(message.content.toString())
+          resolve(parsedJson)
+        } catch (err) {
+          reject(new Error('Failed to parse JSON from RPC response'))
+        }
+      })
     })
 
-    await rabbitmq.channel.sendToQueue(getQueueName(this.options.clientId), Buffer.from(JSON.stringify(jobData)), {
-      deliveryMode: 2,
-      replyTo: replyQueue.queue,
-      correlationId: jobData.id,
-      priority: QUEUE_PRIORITY.HIGH,
+    await this.broker.publish(getQueueName(this.options.clientId), Buffer.from(JSON.stringify(jobData)), {
+      options: {
+        deliveryMode: 2,
+        replyTo: getQueueRPCReplyName(this.options.clientId),
+        correlationId: jobData.id,
+        priority: QUEUE_PRIORITY.HIGH
+      },
     })
 
     const finalRes = await response
-    
-    if (consumerTag) {
-      rabbitmq.channel.cancel(consumerTag)
-    }
     
     return finalRes
   }
