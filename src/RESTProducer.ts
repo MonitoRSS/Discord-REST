@@ -170,6 +170,7 @@ class RESTProducer extends EventEmitter {
     }
 
     const subscriber = await this.broker.subscribe(getQueueRPCReplyName(this.options.clientId))
+    subscriber.on('error', this.onErrorHandler)
 
     const response = new Promise<JobResponse<JSONResponse>>(async (resolve, reject) => {
       subscriber.on('message', (message) => {
@@ -186,7 +187,7 @@ class RESTProducer extends EventEmitter {
       })
     })
 
-    await this.broker.publish(getQueueName(this.options.clientId), Buffer.from(JSON.stringify(jobData)), {
+    const publisher = await this.broker.publish(getQueueName(this.options.clientId), Buffer.from(JSON.stringify(jobData)), {
       options: {
         deliveryMode: 2,
         replyTo: getQueueRPCReplyName(this.options.clientId),
@@ -194,6 +195,7 @@ class RESTProducer extends EventEmitter {
         priority: QUEUE_PRIORITY.HIGH
       },
     })
+    publisher.on('error', this.onErrorHandler)
 
     const finalRes = await response
     
