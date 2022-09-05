@@ -1,3 +1,4 @@
+import 'source-map-support/register'
 import RESTHandler from "./RESTHandler"
 import APIRequest from './APIRequest'
 import RESTProducer from './RESTProducer'
