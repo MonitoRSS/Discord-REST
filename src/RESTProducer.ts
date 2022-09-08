@@ -75,6 +75,8 @@ class RESTProducer extends EventEmitter {
               options: {
                 noAck: true,
               },
+              // @ts-ignore
+              closeTimeout: 1000 * 60 * 2 // 2 minutes,
             },
           },
           publications: {
