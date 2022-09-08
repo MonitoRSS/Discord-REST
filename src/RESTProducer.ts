@@ -74,8 +74,8 @@ class RESTProducer extends EventEmitter {
               queue: rpcReplyName,
               options: {
                 noAck: true,
-              }
-            }
+              },
+            },
           },
           publications: {
             [queueName]: {
@@ -173,7 +173,7 @@ class RESTProducer extends EventEmitter {
     subscriber.on('error', this.onErrorHandler)
 
     const response = new Promise<JobResponse<JSONResponse>>(async (resolve, reject) => {
-      subscriber.on('message', (message) => {
+      subscriber.on('message', (message, subscription) => {
         if (message.properties.correlationId !== jobData.id) {
           return
         }
@@ -198,6 +198,12 @@ class RESTProducer extends EventEmitter {
     publisher.on('error', this.onErrorHandler)
 
     const finalRes = await response
+
+    try {
+      await subscriber.cancel()
+    } catch (err) {
+      this.emit('error', err as Error)
+    }
     
     return finalRes
   }
