@@ -23,7 +23,7 @@ interface RequestOptions {
   rpc?: boolean
   priority?: QUEUE_PRIORITY
   method?: string;
-  body?: Record<string, unknown>
+  body?: string
   headers?: Record<string, string>
 }
 
