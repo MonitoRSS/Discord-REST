@@ -19,9 +19,12 @@ interface Options {
 }
 
 
-interface RequestOptions extends RequestInit {
+interface RequestOptions {
   rpc?: boolean
   priority?: QUEUE_PRIORITY
+  method?: string;
+  body?: Record<string, unknown>
+  headers?: Record<string, string>
 }
 
 declare interface RESTProducer {
