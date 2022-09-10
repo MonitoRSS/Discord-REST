@@ -1,6 +1,6 @@
 {
   "name": "@synzen/discord-rest",
-  "version": "0.7.0-beta.0",
+  "version": "0.7.0-beta.1",
   "description": "",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -18,6 +18,8 @@
     "test:watch": "npm run test -- --watch",
     "test-e2e": "jest --config ./test/jest-e2e.js",
     "test-e2e:watch": "npm run test-e2e -- --watch --detectOpenHandles",
+    "example:consumer": "nodemon examples/consumer.ts",
+    "example:producer": "nodemon examples/producer.ts",
     "lint": "eslint ."
   },
   "keywords": [],
