@@ -62,7 +62,6 @@ class RESTProducer extends EventEmitter {
             },
             [rpcReplyName]: {
               assert: true,
-              replyTo: true,
               options: {
                 autoDelete: true,
                 exclusive: true,
@@ -204,8 +203,9 @@ class RESTProducer extends EventEmitter {
     })
     publisher.on('error', this.onErrorHandler)
 
+    console.log('awiating res')
     const finalRes = await response
-
+    console.log(finalRes)
     try {
       await subscriber.cancel()
     } catch (err) {
