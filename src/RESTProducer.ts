@@ -52,6 +52,7 @@ class RESTProducer extends EventEmitter {
           connection: {
             url: this.rabbitmqUri,
           },
+          // @ts-ignore
           queues: {
             [queueName]: {
               assert: true,
@@ -61,6 +62,7 @@ class RESTProducer extends EventEmitter {
             },
             [rpcReplyName]: {
               assert: true,
+              replyTo: true,
               options: {
                 autoDelete: true,
                 exclusive: true,
@@ -86,7 +88,7 @@ class RESTProducer extends EventEmitter {
             [queueName]: {
               vhost: 'v1',
               queue: queueName,
-            }
+            },
           }
         },
       },
