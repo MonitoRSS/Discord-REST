@@ -11,6 +11,7 @@ import { FetchResponse } from "./types/FetchResponse";
 import { LongRunningBucketRequest } from "./types/LongRunningBucketRequest";
 import { LongRunningHandlerRequest } from "./types/LongRunningHandlerRequest";
 import { AbortError } from "./errors/AbortError";
+import { RequestInit } from "undici";
 dayjs.extend(utc)
 
 interface ConsumerOptions {
@@ -248,6 +249,7 @@ class RESTConsumer extends EventEmitter {
           await channel.sendToQueue(message.properties.replyTo, Buffer.from(JSON.stringify(response)), {
             correlationId: message.properties.correlationId,
           })
+
         } catch (err) {
           this.emit('err', new Error(`Failed to send RPC response message: ${(err as Error).message}`))
         }
