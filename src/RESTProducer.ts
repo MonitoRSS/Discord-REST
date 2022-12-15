@@ -5,8 +5,11 @@ import { QUEUE_PRIORITY } from './constants/queue-priority';
 import dayjs from 'dayjs'
 import utc from 'dayjs/plugin/utc'
 import EventEmitter from 'events';
-import { BrokerAsPromised } from 'rascal'
 import { RequestInit } from 'undici';
+import amqp from 'amqp-connection-manager'
+import { IAmqpConnectionManager } from 'amqp-connection-manager/dist/esm/AmqpConnectionManager';
+import ChannelWrapper from 'amqp-connection-manager/dist/esm/ChannelWrapper';
+import { Channel } from 'amqplib';
 
 dayjs.extend(utc)
 
@@ -34,67 +37,30 @@ declare interface RESTProducer {
 }
 
 class RESTProducer extends EventEmitter {
-  broker: BrokerAsPromised | null = null;
+  connection: IAmqpConnectionManager;
+  channelWrapper: ChannelWrapper;
 
   constructor(
     private readonly rabbitmqUri: string,
     private readonly options: Options
   ) {
     super()
+    const queueName = getQueueName(this.options.clientId)
+    
+    this.connection = amqp.connect([rabbitmqUri])
+    this.channelWrapper = this.connection.createChannel({
+      setup: function (channel: Channel) {
+        return channel.assertQueue(queueName, {
+          ...getQueueConfig({
+            autoDeleteQueues: options.autoDeleteQueues || false,
+          }),
+        })
+      }
+    })
   }
 
   public async initialize(): Promise<void> {
-    const queueName = getQueueName(this.options.clientId)
-    const rpcReplyName = getQueueRPCReplyName(this.options.clientId)
-
-    this.broker = await BrokerAsPromised.create({
-      vhosts: {
-        v1: {
-          connection: {
-            url: this.rabbitmqUri,
-          },
-          // @ts-ignore
-          queues: {
-            [queueName]: {
-              assert: true,
-              options: getQueueConfig({
-                autoDeleteQueues: this.options.autoDeleteQueues || false,
-              }),
-            },
-            [rpcReplyName]: {
-              assert: true,
-              options: {
-                autoDelete: true,
-                exclusive: true,
-                durable: false,
-                arguments: {
-                  'x-expires': 1000 * 60 * 5 // 5 minutes
-                }
-              }
-            }
-          },
-          subscriptions: {
-            [rpcReplyName]: {
-              vhost: 'v1',
-              queue: rpcReplyName,
-              options: {
-                noAck: true,
-              },
-              // @ts-ignore
-              closeTimeout: 1000 * 60 * 2 // 2 minutes,
-            },
-          },
-          publications: {
-            [queueName]: {
-              vhost: 'v1',
-              queue: queueName,
-            },
-          }
-        },
-      },
-    }, )
-
-    this.broker.on('error', this.onErrorHandler)
+    // Leave empty for now
   }
 
   public async onErrorHandler(err: Error): Promise<void> {
@@ -102,11 +68,7 @@ class RESTProducer extends EventEmitter {
   }
 
   public async close(): Promise<void> {
-    if (!this.broker) {
-      return
-    }
-
-    await this.broker.shutdown()
+    await this.channelWrapper.close()
   }
 
   /**
@@ -123,10 +85,6 @@ class RESTProducer extends EventEmitter {
       throw new Error(`Missing route for RESTProducer enqueue`)
     }
 
-    if (!this.broker) {
-      throw new Error(`RESTProducer must be initialized with initialize() before enqueue`)
-    }
-
     const jobData: JobData = {
       id: nanoid(),
       route,
@@ -136,14 +94,10 @@ class RESTProducer extends EventEmitter {
       startTimestamp: dayjs().valueOf()
     }
 
-    const publication = await this.broker.publish(getQueueName(this.options.clientId), Buffer.from(JSON.stringify(jobData)), {
-      options: {
-        deliveryMode: 2,
-        priority: options.priority || QUEUE_PRIORITY.LOW,
-      },
+    await this.channelWrapper.sendToQueue(getQueueName(this.options.clientId), Buffer.from(JSON.stringify(jobData)), {
+      deliveryMode: 2,
+      priority: options.priority || QUEUE_PRIORITY.LOW,
     })
-
-    publication.on('error', this.onErrorHandler)
   }
 
   /**
@@ -163,10 +117,6 @@ class RESTProducer extends EventEmitter {
       throw new Error(`Missing route for RESTProducer enqueue`)
     }
 
-    if (!this.broker) {
-      throw new Error(`RESTProducer must be initialized with initialize() before enqueue`)
-    }
-
     const jobData: JobData = {
       id: nanoid(),
       route,
@@ -176,37 +126,52 @@ class RESTProducer extends EventEmitter {
       startTimestamp: dayjs().utc().valueOf()
     }
 
-    const subscriber = await this.broker.subscribe(getQueueRPCReplyName(this.options.clientId))
-    subscriber.on('error', this.onErrorHandler)
+    const rpcQueueName = getQueueRPCReplyName(this.options.clientId)
+
+    await this.channelWrapper.addSetup(function (channel: Channel) {
+      return Promise.all([
+        channel.assertQueue(jobData.id, {
+          exclusive: true,
+          autoDelete: true,
+          expires: 1000 * 60 * 1, // 1 minutes
+          durable: false,
+        })
+      ])
+    })
+
+    let consumerTag: string;
 
     const response = new Promise<JobResponse<JSONResponse>>(async (resolve, reject) => {
-      subscriber.on('message', (message, subscription) => {
+      const consumer = await this.channelWrapper.consume(jobData.id, async (message) => {
         if (message.properties.correlationId !== jobData.id) {
           return
         }
 
         try {
-          const parsedJson = JSON.parse(message.content.toString())
+          const parsedJson = JSON.parse(message.content.toString()) as JobResponse<JSONResponse>
           resolve(parsedJson)
         } catch (err) {
           reject(new Error('Failed to parse JSON from RPC response'))
         }
+      }, {
+        noAck: true,
       })
+      
+      consumerTag = consumer.consumerTag
     })
-
-    const publisher = await this.broker.publish(getQueueName(this.options.clientId), Buffer.from(JSON.stringify(jobData)), {
-      options: {
-        deliveryMode: 2,
-        replyTo: getQueueRPCReplyName(this.options.clientId),
-        correlationId: jobData.id,
-        priority: QUEUE_PRIORITY.HIGH
-      },
+    
+    await this.channelWrapper.sendToQueue(rpcQueueName, Buffer.from(JSON.stringify(jobData)), {
+      deliveryMode: 2,
+      replyTo: jobData.id,
+      correlationId: jobData.id,
+      priority: QUEUE_PRIORITY.HIGH,
     })
-    publisher.on('error', this.onErrorHandler)
 
     const finalRes = await response
+
     try {
-      await subscriber.cancel()
+      // @ts-ignore
+      await this.channelWrapper.cancel(consumerTag as string)
     } catch (err) {
       this.emit('error', err as Error)
     }

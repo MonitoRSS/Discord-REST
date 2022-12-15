@@ -13,7 +13,7 @@ export const getQueueRPCReplyName = (clientId: string): string => {
     return `test:discord-api-reply-${clientId}`
   }
   
-  return `discord-api-reply-${clientId}-${process.pid}`
+  return `discord-api-reply-${clientId}`
 }
 
 export const getQueueConfig = (options?: {

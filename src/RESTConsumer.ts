@@ -3,7 +3,7 @@ import { EventEmitter } from "events";
 import { MessageParseError, RequestTimeoutError } from "./errors";
 import * as yup from 'yup'
 import amqp from 'amqplib'
-import { getQueueConfig, getQueueName } from "./constants/queue-configs";
+import { getQueueConfig, getQueueName, getQueueRPCReplyName } from "./constants/queue-configs";
 import { GLOBAL_BLOCK_TYPE } from "./constants/global-block-type";
 import dayjs from "dayjs";
 import utc from 'dayjs/plugin/utc'
@@ -106,6 +106,7 @@ class RESTConsumer extends EventEmitter {
     connection: amqp.Connection,
     channel: amqp.Channel,
     consumerTag?: string
+    rpcConsumerTag?: string
   } | null = null;
 
   constructor(
@@ -172,9 +173,12 @@ class RESTConsumer extends EventEmitter {
     if (this.rabbitmq.consumerTag) {
       await this.rabbitmq.channel.cancel(this.rabbitmq.consumerTag)
     }
-    this.rabbitmq.channel.removeListener('error', this.onConnectionError)
+    if (this.rabbitmq.rpcConsumerTag) {
+      await this.rabbitmq.channel.cancel(this.rabbitmq.rpcConsumerTag)
+    }
+    this.rabbitmq.channel.removeListener('error', (err) => this.onConnectionError(err))
     await this.rabbitmq.channel.close()
-    this.rabbitmq.connection.removeListener('error', this.onConnectionError)
+    this.rabbitmq.connection.removeListener('error', err => this.onConnectionError(err))
     await this.rabbitmq.connection.close()
   }
 
@@ -196,67 +200,50 @@ class RESTConsumer extends EventEmitter {
     
     const channel = this.rabbitmq.channel
     const queueName = getQueueName(this.consumerOptions.clientId)
+    const rpcQueueName = getQueueRPCReplyName(this.consumerOptions.clientId)
 
     const consumer = await channel.consume(queueName, async (message) => {
-      let data: JobData;
-
       if (!message) {
-        return
-      }
-        
-      try {
-        data = await this.validateMessage(message)
-      } catch (err) {
-        this.emit('err', new MessageParseError(`Message validation failed: ${(err as Error).message}. Ensure job schemas of both producer and consumer are compatible with each other. Ignoring job execution.`))
-        channel.ack(message)
-
         return;
       }
 
-      if (await this.consumerOptions.checkIsDuplicate?.(data.id)) {
-        channel.ack(message)
-
-        return
-      }
-  
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let response: JobResponseError | JobResponse<any>;
-      
       try {
-        response = {
-          ...await this.processJobData(data),
-          state: 'success',
-        }
-
-        this.emit('jobCompleted', data, response)
+        await this.handleMessage(message, {
+          rejectDuplicates: true
+        })
         channel.ack(message)
       } catch (err) {
         if ((err as Error).name === AbortError.name) {
           channel.nack(message)
-        }
-
-        const errorMessage = (err as Error).message
-        response = {
-          state: 'error',
-          message: errorMessage
-        }
-        this.emit('jobError', err as Error, data)
-      }
-
-
-      if (data.rpc) {
-        try {
-          await channel.sendToQueue(message.properties.replyTo, Buffer.from(JSON.stringify(response)), {
-            correlationId: message.properties.correlationId,
-          })
-
-        } catch (err) {
-          this.emit('err', new Error(`Failed to send RPC response message: ${(err as Error).message}`))
+        } else {
+          channel.ack(message)
         }
       }
     }, { noAck: false })
 
+    const rpcConsumer = await channel.consume(rpcQueueName, async (message) => {
+      if (!message) {
+        return;
+      }
+
+      const response = await this.handleMessage(message, {
+        rejectDuplicates: false,
+      })
+
+      try {
+        await channel.sendToQueue(message.properties.replyTo, Buffer.from(JSON.stringify(response)), {
+          correlationId: message.properties.correlationId,
+        })
+
+      } catch (err) {
+        this.emit('err', new Error(`Failed to send RPC response message: ${(err as Error).message}`))
+      }
+    }, {
+      noAck: true,
+    })
+
     this.rabbitmq.consumerTag = consumer.consumerTag
+    this.rabbitmq.rpcConsumerTag = rpcConsumer.consumerTag
   }
 
   private async stopConsumer() {
@@ -283,12 +270,21 @@ class RESTConsumer extends EventEmitter {
     const connection = await amqp.connect(this.rabbitmqUri)
     const channel = await connection.createChannel()
     const queueName = getQueueName(this.consumerOptions.clientId)
-    await channel.assertQueue(queueName, getQueueConfig({
-      autoDeleteQueues: this.consumerOptions.autoDeleteQueues || false
-    }))
+    const rpcQueueName = getQueueRPCReplyName(this.consumerOptions.clientId)
 
-    connection.once('error', this.onConnectionError)
-    channel.once('error', this.onConnectionError)
+    await channel.assertQueue(queueName, {
+      ...getQueueConfig({
+        autoDeleteQueues: this.consumerOptions.autoDeleteQueues || false
+      }),
+    })
+
+    await channel.assertQueue(rpcQueueName, {
+      autoDelete: true
+    })
+
+    
+    connection.once('error', err => this.onConnectionError(err))
+    channel.once('error', err => this.onConnectionError(err))
 
     this.rabbitmq = {
       channel,
@@ -299,6 +295,59 @@ class RESTConsumer extends EventEmitter {
   private async onConnectionError(error: Error) {
     this.emit('err', new Error(`RabbitMQ connection or channel error: ${(error as Error).message}. Restarting connection.`))
     await this.restartConnection()
+  }
+
+  private async handleMessage(message: amqp.Message, {
+    rejectDuplicates
+  }: {
+    rejectDuplicates: boolean
+  }) {
+    let data: JobData;
+
+    let response: JobResponseError | JobResponse<any>;
+
+    try {
+      data = await this.validateMessage(message)
+    } catch (err) {
+      this.emit('err', new MessageParseError(`Message validation failed: ${(err as Error).message}. Ensure job schemas of both producer and consumer are compatible with each other. Ignoring job execution.`))
+
+      return {
+        state: 'error',
+        message: (err as Error).message
+      } as JobResponseError;
+    }
+
+    if (rejectDuplicates &&await this.consumerOptions.checkIsDuplicate?.(data.id)) {
+
+      return {
+        state: 'error',
+        message: 'Duplicate job'
+      } as JobResponseError
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    
+    try {
+      response = {
+        ...await this.processJobData(data),
+        state: 'success',
+      }
+
+      this.emit('jobCompleted', data, response)
+    } catch (err) {
+      if ((err as Error).name === AbortError.name) {
+        throw err
+      }
+
+      const errorMessage = (err as Error).message
+      response = {
+        state: 'error',
+        message: errorMessage
+      }
+      this.emit('jobError', err as Error, data)
+    }
+
+    return response;
   }
 
   private async processJobData(data: JobData) {

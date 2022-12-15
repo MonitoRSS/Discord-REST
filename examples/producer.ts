@@ -16,7 +16,7 @@ const producer = new RESTProducer(rabbitmqUri, {
 producer.initialize().then(async () => {
   console.log('Producer is initialized')
 
-  await Promise.all(new Array(10).fill(0).map(function (_, index) {
+  await Promise.all(new Array(1).fill(0).map(function (_, index) {
     const nodeFetchOptions = {
       // node-fetch options.
       method: "POST",
@@ -26,14 +26,14 @@ producer.initialize().then(async () => {
     }
 
 
-    return producer.enqueue(
+    return producer.fetch(
       `https://discord.com/api/channels/${channelId}/messages`,
       nodeFetchOptions,
       {
         // Any meta info you'd like to attach to this request
         meta: 1,
       }
-    )
+    ).then(console.log)
   }))
 
   console.log('Sent all')
