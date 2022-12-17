@@ -80,13 +80,15 @@ class RESTProducer extends EventEmitter {
    * @param meta Metadata to attach to the job for the Consumer to access
    * @returns The enqueued job
    */
-  public async enqueue(route: string, options: RequestOptions = {}, meta?: Record<string, unknown>): Promise<void> {
+  public async enqueue(route: string, options: RequestOptions = {}, meta?: Record<string, unknown> & {
+    id?: string
+  }): Promise<void> {
     if (!route) {
       throw new Error(`Missing route for RESTProducer enqueue`)
     }
 
     const jobData: JobData = {
-      id: nanoid(),
+      id: meta?.id || nanoid(),
       route,
       options,
       meta,
