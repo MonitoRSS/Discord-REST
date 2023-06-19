@@ -282,7 +282,7 @@ class RESTConsumer extends EventEmitter {
       autoDelete: true
     })
 
-    await channel.prefetch(this.options?.maxRequestsPerSecond || 50)
+    await channel.prefetch((this.options?.maxRequestsPerSecond || 100) * 3)
 
     
     connection.once('error', err => this.onConnectionError(err))
