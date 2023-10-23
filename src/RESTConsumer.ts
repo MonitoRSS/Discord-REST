@@ -61,6 +61,7 @@ export type JobResponse<DiscordResponse> = {
   state: 'success',
   status: number,
   body: DiscordResponse
+  inputBody: Record<string, unknown>
 }
 
 export interface JobResponseError {
@@ -333,6 +334,7 @@ class RESTConsumer extends EventEmitter {
       response = {
         ...await this.processJobData(data),
         state: 'success',
+        inputBody: data.options.body,
       }
 
       this.emit('jobCompleted', data, response)
