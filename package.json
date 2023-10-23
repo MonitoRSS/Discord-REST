@@ -37,7 +37,7 @@
     "@typescript-eslint/parser": "^3.10.1",
     "eslint": "^7.25.0",
     "jest": "^28.1.0",
-    "nodemon": "^2.0.19",
+    "nodemon": "^3.0.1",
     "ts-jest": "^28.0.4",
     "ts-node": "^9.1.1",
     "typescript": "^4.6.3"
