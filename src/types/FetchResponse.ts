@@ -1,7 +1,7 @@
 import { IncomingHttpHeaders } from "http"
 
 export interface FetchResponse {
-  json: <T>() => Promise<T>
+  json: () => Promise<unknown>
   text: () => Promise<string>
   headers: IncomingHttpHeaders
   status: number
