@@ -38,6 +38,10 @@ interface ConsumerOptions {
    * jobs will emit a "jobError" event
    */
   rejectJobsAfterDurationMs?: number
+  /**
+   * Whether to use a single active consumer to send API requests.
+   */
+  singleActiveConsumer?: boolean
 }
 
 interface RequestOptions extends RequestInit {
@@ -275,7 +279,8 @@ class RESTConsumer extends EventEmitter {
 
     await channel.assertQueue(queueName, {
       ...getQueueConfig({
-        autoDeleteQueues: this.consumerOptions.autoDeleteQueues || false
+        autoDeleteQueues: this.consumerOptions.autoDeleteQueues || false,
+        singleActiveConsumer: this.consumerOptions.singleActiveConsumer ?? true,
       }),
     })
 

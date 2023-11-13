@@ -17,13 +17,14 @@ export const getQueueRPCReplyName = (clientId: string): string => {
 }
 
 export const getQueueConfig = (options?: {
-  autoDeleteQueues: boolean
+  autoDeleteQueues: boolean,
+  singleActiveConsumer: boolean
 }): amqp.Options.AssertQueue => {
   return {
     durable: true,
     autoDelete: options?.autoDeleteQueues,
     arguments: {
-      'x-single-active-consumer': true,
+      'x-single-active-consumer': options?.singleActiveConsumer ?? true,
       'x-max-priority': 255,
       'x-queue-mode': 'lazy',
       'x-message-ttl': 1000 * 60 * 60 * 24 // 1 day
