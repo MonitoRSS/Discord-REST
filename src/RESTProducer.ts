@@ -20,6 +20,7 @@ interface Options {
    * integration testing.
    */
   autoDeleteQueues?: boolean
+  singleActiveConsumer?: boolean
 }
 
 
@@ -53,6 +54,7 @@ class RESTProducer extends EventEmitter {
         return channel.assertQueue(queueName, {
           ...getQueueConfig({
             autoDeleteQueues: options.autoDeleteQueues || false,
+            singleActiveConsumer: options.singleActiveConsumer ?? true,
           }),
         })
       }
