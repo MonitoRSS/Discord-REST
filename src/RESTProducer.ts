@@ -71,15 +71,17 @@ class RESTProducer extends EventEmitter {
           }),
         })
       ])
-    })
-
-    this.channelWrapper.consume(getQueueRPCCallbackName(clientId), async (message) => {
-      if (!message) {
-        return
-      }
-
-      const response: JobResponse<unknown> | JobResponseError = JSON.parse(message.content.toString())
-      this.rpcReplyEmitter.emit(message.properties.correlationId, response)
+    }).then(() => {
+      this.channelWrapper.consume(getQueueRPCCallbackName(clientId), async (message) => {
+        if (!message) {
+          return
+        }
+  
+        const response: JobResponse<unknown> | JobResponseError = JSON.parse(message.content.toString())
+        this.rpcReplyEmitter.emit(message.properties.correlationId, response)
+      }, {
+        noAck: true
+      })
     })
   }
 
@@ -154,20 +156,9 @@ class RESTProducer extends EventEmitter {
 
     const rpcQueueName = getQueueRPCReplyName(this.options.clientId)
 
-    await this.channelWrapper.addSetup(function (channel: Channel) {
-      return Promise.all([
-        channel.assertQueue(jobData.id, {
-          exclusive: true,
-          autoDelete: true,
-          expires: 1000 * 60 * 1, // 1 minutes
-          durable: false,
-        })
-      ])
-    })
-
     await this.channelWrapper.sendToQueue(rpcQueueName, Buffer.from(JSON.stringify(jobData)), {
       deliveryMode: 2,
-      replyTo: jobData.id,
+      replyTo: getQueueRPCCallbackName(this.options.clientId),
       correlationId: jobData.id,
       priority: QUEUE_PRIORITY.HIGH,
     })
