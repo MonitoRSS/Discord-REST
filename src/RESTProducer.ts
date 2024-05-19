@@ -72,6 +72,15 @@ class RESTProducer extends EventEmitter {
         })
       ])
     })
+
+    this.channelWrapper.consume(getQueueRPCCallbackName(clientId), async (message) => {
+      if (!message) {
+        return
+      }
+
+      const response: JobResponse<unknown> | JobResponseError = JSON.parse(message.content.toString())
+      this.rpcReplyEmitter.emit(message.properties.correlationId, response)
+    })
   }
 
   public async initialize(): Promise<void> {
