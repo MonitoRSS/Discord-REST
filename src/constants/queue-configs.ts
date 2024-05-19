@@ -16,9 +16,7 @@ export const getQueueRPCReplyName = (clientId: string): string => {
   return `discord-api-reply-${clientId}`
 }
 
-export const getQueueRPCCallbackName = (clientId: string): string => {
-  return `discord-api-callback-${clientId}`
-}
+export const AMQP_RPC_CALLBACK_QUEUE = 'amq.rabbitmq.reply-to'
 
 export const getQueueConfig = (options?: {
   autoDeleteQueues: boolean,

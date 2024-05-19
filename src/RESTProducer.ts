@@ -1,6 +1,6 @@
 import { JobData, JobResponse, JobResponseError } from './RESTConsumer'
 import { nanoid } from 'nanoid'
-import { getQueueConfig, getQueueName, getQueueRPCCallbackName, getQueueRPCReplyName } from './constants/queue-configs';
+import { AMQP_RPC_CALLBACK_QUEUE, getQueueConfig, getQueueName, getQueueRPCReplyName } from './constants/queue-configs';
 import { QUEUE_PRIORITY } from './constants/queue-priority';
 import dayjs from 'dayjs'
 import utc from 'dayjs/plugin/utc'
@@ -62,26 +62,15 @@ class RESTProducer extends EventEmitter {
       }
     })
 
-    this.channelWrapper.addSetup(function (channel: Channel) {
-      return Promise.all([
-        channel.assertQueue(getQueueRPCCallbackName(clientId), {
-          ...getQueueConfig({
-            autoDeleteQueues: true,
-            singleActiveConsumer: false, // correlation id is used to match RPC responses
-          }),
-        })
-      ])
-    }).then(() => {
-      this.channelWrapper.consume(getQueueRPCCallbackName(clientId), async (message) => {
-        if (!message) {
-          return
-        }
-  
-        const response: JobResponse<unknown> | JobResponseError = JSON.parse(message.content.toString())
-        this.rpcReplyEmitter.emit(message.properties.correlationId, response)
-      }, {
-        noAck: true
-      })
+    this.channelWrapper.consume(AMQP_RPC_CALLBACK_QUEUE, async (message) => {
+      if (!message) {
+        return
+      }
+
+      const response: JobResponse<unknown> | JobResponseError = JSON.parse(message.content.toString())
+      this.rpcReplyEmitter.emit(message.properties.correlationId, response)
+    }, {
+      noAck: true
     })
   }
 
@@ -95,6 +84,7 @@ class RESTProducer extends EventEmitter {
 
   public async close(): Promise<void> {
     await this.channelWrapper.close()
+    await this.connection.close()
   }
 
   /**
@@ -158,7 +148,7 @@ class RESTProducer extends EventEmitter {
 
     await this.channelWrapper.sendToQueue(rpcQueueName, Buffer.from(JSON.stringify(jobData)), {
       deliveryMode: 2,
-      replyTo: getQueueRPCCallbackName(this.options.clientId),
+      replyTo: AMQP_RPC_CALLBACK_QUEUE,
       correlationId: jobData.id,
       priority: QUEUE_PRIORITY.HIGH,
     })
