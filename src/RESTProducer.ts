@@ -1,6 +1,6 @@
 import { JobData, JobResponse, JobResponseError } from './RESTConsumer'
 import { nanoid } from 'nanoid'
-import { getQueueConfig, getQueueName, getQueueRPCReplyName } from './constants/queue-configs';
+import { getQueueConfig, getQueueName, getQueueRPCCallbackName, getQueueRPCReplyName } from './constants/queue-configs';
 import { QUEUE_PRIORITY } from './constants/queue-priority';
 import dayjs from 'dayjs'
 import utc from 'dayjs/plugin/utc'
@@ -40,14 +40,16 @@ declare interface RESTProducer {
 class RESTProducer extends EventEmitter {
   connection: IAmqpConnectionManager;
   channelWrapper: ChannelWrapper;
+  rpcReplyEmitter = new EventEmitter()
 
   constructor(
     private readonly rabbitmqUri: string,
     private readonly options: Options
   ) {
     super()
-    const queueName = getQueueName(this.options.clientId)
-    
+    const clientId = this.options.clientId
+    const queueName = getQueueName(clientId)
+    this.rpcReplyEmitter.setMaxListeners(0)
     this.connection = amqp.connect([rabbitmqUri])
     this.channelWrapper = this.connection.createChannel({
       setup: function (channel: Channel) {
@@ -58,6 +60,17 @@ class RESTProducer extends EventEmitter {
           }),
         })
       }
+    })
+
+    this.channelWrapper.addSetup(function (channel: Channel) {
+      return Promise.all([
+        channel.assertQueue(getQueueRPCCallbackName(clientId), {
+          ...getQueueConfig({
+            autoDeleteQueues: true,
+            singleActiveConsumer: false, // correlation id is used to match RPC responses
+          }),
+        })
+      ])
     })
   }
 
@@ -143,27 +156,6 @@ class RESTProducer extends EventEmitter {
       ])
     })
 
-    let consumerTag: string;
-
-    const response = new Promise<JobResponse<JSONResponse>>(async (resolve, reject) => {
-      const consumer = await this.channelWrapper.consume(jobData.id, async (message) => {
-        if (message.properties.correlationId !== jobData.id) {
-          return
-        }
-
-        try {
-          const parsedJson = JSON.parse(message.content.toString()) as JobResponse<JSONResponse>
-          resolve(parsedJson)
-        } catch (err) {
-          reject(new Error('Failed to parse JSON from RPC response'))
-        }
-      }, {
-        noAck: true,
-      })
-      
-      consumerTag = consumer.consumerTag
-    })
-    
     await this.channelWrapper.sendToQueue(rpcQueueName, Buffer.from(JSON.stringify(jobData)), {
       deliveryMode: 2,
       replyTo: jobData.id,
@@ -171,16 +163,11 @@ class RESTProducer extends EventEmitter {
       priority: QUEUE_PRIORITY.HIGH,
     })
 
-    const finalRes = await response
-
-    try {
-      // @ts-ignore
-      await this.channelWrapper.cancel(consumerTag as string)
-    } catch (err) {
-      this.emit('error', err as Error)
-    }
-    
-    return finalRes
+    return new Promise((resolve) => {
+      this.rpcReplyEmitter.once(jobData.id, (response: JobResponse<JSONResponse> | JobResponseError) => {
+        resolve(response)
+      })
+    })
   }
 }
 
