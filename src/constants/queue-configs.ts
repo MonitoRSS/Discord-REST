@@ -29,7 +29,7 @@ export const getQueueConfig = (options?: {
     autoDelete: options?.autoDeleteQueues,
     arguments: {
       'x-single-active-consumer': options?.singleActiveConsumer ?? true,
-      'x-max-priority': 5,
+      'x-max-priority': 255,
       'x-queue-mode': 'lazy',
       'x-message-ttl': 1000 * 60 * 60 * 24 // 1 day
     }
