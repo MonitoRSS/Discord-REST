@@ -38,7 +38,10 @@ producer.initialize().then(async () => {
 
   console.log('Sent all')
 
+  return producer.close()
   // process.exit(0)
+}).then(() => {
+  console.log('Producer closed')
 }).catch(err => {
   console.error(err)
   process.exit(1)
