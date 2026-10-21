@@ -1,9 +1,8 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
+    "noEmit": true,
     "rootDir": ".",
-    "outDir": "./.test-dist",
-    "declaration": false,
     "types": ["node"]
   },
   "include": [
@@ -13,7 +12,6 @@
   "exclude": [
     "node_modules",
     "dist",
-    ".test-dist",
     "examples"
   ]
 }

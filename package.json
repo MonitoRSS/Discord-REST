@@ -17,9 +17,9 @@
   "scripts": {
     "prepublishOnly": "npm run build",
     "build": "tsc",
-    "build:tests": "tsc -p tsconfig.test.json",
-    "test": "npm run build:tests && node --test \".test-dist/src/*.test.js\"",
-    "test-e2e": "npm run build:tests && node --test \".test-dist/test/*.test.js\"",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "test": "node --import tsx --test \"src/*.test.ts\"",
+    "test-e2e": "node --import tsx --test \"test/*.test.ts\"",
     "example:consumer": "tsx watch examples/consumer.ts",
     "example:producer": "tsx watch examples/producer.ts",
     "lint": "eslint ."
