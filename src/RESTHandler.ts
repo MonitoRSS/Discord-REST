@@ -1,9 +1,5 @@
-// @discordjs/rest's bundled type definitions require TypeScript >= 5.2, which this
-// package does not use yet. Requiring it untyped keeps the existing toolchain while
-// still using the library at runtime.
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const discordRest = require('@discordjs/rest')
-
+import { REST, RESTEvents, DiscordAPIError, HTTPError } from '@discordjs/rest'
+import type { RequestMethod, RouteLike } from '@discordjs/rest'
 import { URL } from 'url'
 import { EventEmitter } from 'events'
 import APIRequest from './APIRequest'
@@ -109,7 +105,7 @@ declare interface RESTHandler {
   /**
    * When the RESTHandler's processing time of a request has taken longer than 10 minutes
    */
-  on(event: 'LongRunningHandlerRequest', listener: (details: LongRunningHandlerRequest) => void): this
+  on(event: 'longRunningHandlerRequest', listener: (details: LongRunningHandlerRequest) => void): this
   /**
    * When another request has been completed.
    */
@@ -119,7 +115,7 @@ declare interface RESTHandler {
 interface ParsedRoute {
   api: string
   version: string
-  fullRoute: string
+  fullRoute: RouteLike
   versioned: boolean
 }
 
@@ -135,7 +131,7 @@ function parseRoute (route: string): ParsedRoute {
     return {
       api: DEFAULT_API,
       version: DEFAULT_VERSION,
-      fullRoute: route.startsWith('/') ? route : `/${route}`,
+      fullRoute: (route.startsWith('/') ? route : `/${route}`) as RouteLike,
       versioned: true,
     }
   }
@@ -147,7 +143,7 @@ function parseRoute (route: string): ParsedRoute {
     return {
       api: url.origin,
       version: DEFAULT_VERSION,
-      fullRoute: `${url.pathname}${url.search}`,
+      fullRoute: `${url.pathname}${url.search}` as RouteLike,
       versioned: false,
     }
   }
@@ -155,7 +151,7 @@ function parseRoute (route: string): ParsedRoute {
   return {
     api: `${url.origin}/api`,
     version: match[1] || DEFAULT_VERSION,
-    fullRoute: `${match[2] || '/'}${url.search}`,
+    fullRoute: `${match[2] || '/'}${url.search}` as RouteLike,
     versioned: true,
   }
 }
@@ -193,7 +189,7 @@ class RESTHandler extends EventEmitter {
    * rate limits are scoped per API host, so each host gets its own
    * rate limit state.
    */
-  private readonly rests: Map<string, any> = new Map()
+  private readonly rests: Map<string, REST> = new Map()
   private readonly restOptions: Record<string, any>
   /**
    * Number of invalid requests made within 10 minutes
@@ -258,12 +254,12 @@ class RESTHandler extends EventEmitter {
   /**
    * Get or create the @discordjs/rest instance for an API host.
    */
-  private getRest (api: string, version: string): any {
+  private getRest (api: string, version: string): REST {
     const key = `${api}|v${version}`
     let rest = this.rests.get(key)
 
     if (!rest) {
-      rest = new discordRest.REST({
+      rest = new REST({
         ...this.restOptions,
         api,
         version,
@@ -288,8 +284,8 @@ class RESTHandler extends EventEmitter {
    * response event fires for every attempt, so it is the reliable place
    * to observe rate limits and invalid requests.
    */
-  private setupEventListeners (rest: any): void {
-    rest.on(discordRest.RESTEvents.Response, (req: any, response: any) => {
+  private setupEventListeners (rest: REST): void {
+    rest.on(RESTEvents.Response, (req: any, response: any) => {
       const apiRequest = new APIRequest(req.path)
       const status = response.status
 
@@ -434,7 +430,7 @@ class RESTHandler extends EventEmitter {
     const parsed = parseRoute(route)
     const apiRequest = new APIRequest(route, options)
     const rest = this.getRest(parsed.api, parsed.version)
-    const method = (options.method || 'GET').toUpperCase()
+    const method = (options.method || 'GET').toUpperCase() as RequestMethod
 
     // @discordjs/rest serializes object bodies as JSON. Requests from the
     // producer carry a JSON string, so parse it back into an object. If it
@@ -492,12 +488,12 @@ class RESTHandler extends EventEmitter {
     } catch (err) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const error = err as any
-      if (error instanceof discordRest.DiscordAPIError || error?.name === 'DiscordAPIError') {
+      if (error instanceof DiscordAPIError || error?.name === 'DiscordAPIError') {
         // Preserve the previous behavior where callers receive the raw
         // response for non-2xx status codes instead of an exception.
         return this.createSyntheticResponse(error.status, error.rawError)
       }
-      if (error instanceof discordRest.HTTPError || error?.name === 'HTTPError') {
+      if (error instanceof HTTPError || error?.name === 'HTTPError') {
         return this.createSyntheticResponse(error.status, {
           message: error.statusText || error.message,
         })
@@ -530,6 +526,22 @@ class RESTHandler extends EventEmitter {
   }
 
   private createSyntheticResponse (status: number, body: unknown): FetchResponse {
+    /**
+     * @discordjs/rest parses non-JSON error bodies as an ArrayBuffer.
+     * Decode it so callers still receive the raw response text.
+     */
+    if (body instanceof ArrayBuffer) {
+      const text = new TextDecoder().decode(body)
+      return {
+        status,
+        headers: {
+          'content-type': 'text/plain',
+        },
+        json: async () => JSON.parse(text),
+        text: async () => text,
+      }
+    }
+
     const serialized = JSON.stringify(body)
     const text = serialized === undefined ? '' : serialized
 
