@@ -11,7 +11,6 @@ import { FetchResponse } from "./types/FetchResponse";
 import { LongRunningBucketRequest } from "./types/LongRunningBucketRequest";
 import { LongRunningHandlerRequest } from "./types/LongRunningHandlerRequest";
 import { AbortError } from "./errors/AbortError";
-import { RequestInit } from "undici";
 dayjs.extend(utc)
 
 interface ConsumerOptions {
@@ -44,7 +43,10 @@ interface ConsumerOptions {
   singleActiveConsumer?: boolean
 }
 
-interface RequestOptions extends RequestInit {
+interface RequestOptions {
+  method?: string
+  body?: string
+  headers?: Record<string, string>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   [key: string]: any;
 }

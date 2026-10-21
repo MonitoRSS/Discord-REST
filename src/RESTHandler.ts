@@ -1,25 +1,30 @@
-import Bucket from "./Bucket"
-import APIRequest from "./APIRequest";
-import { EventEmitter } from "events";
-import { DefaultAddOptions, Options } from 'p-queue'
-import PriorityQueue from "p-queue/dist/priority-queue";
-import { GLOBAL_BLOCK_TYPE } from "./constants/global-block-type";
-import { RequestOptions } from "./types/RequestOptions";
-import { FetchResponse } from "./types/FetchResponse";
-import { LongRunningBucketRequest } from "./types/LongRunningBucketRequest";
-import { LongRunningHandlerRequest } from "./types/LongRunningHandlerRequest";
-import dayjs from "dayjs";
-import timezone from 'dayjs/plugin/timezone'
-import { RateLimitedQueue } from "./util/RateLimitedQueue";
+// @discordjs/rest's bundled type definitions require TypeScript >= 5.2, which this
+// package does not use yet. Requiring it untyped keeps the existing toolchain while
+// still using the library at runtime.
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const discordRest = require('@discordjs/rest')
 
-dayjs.extend(timezone)
+import { URL } from 'url'
+import { EventEmitter } from 'events'
+import APIRequest from './APIRequest'
+import { GLOBAL_BLOCK_TYPE } from './constants/global-block-type'
+import { RequestOptions } from './types/RequestOptions'
+import { FetchResponse } from './types/FetchResponse'
+import { LongRunningBucketRequest } from './types/LongRunningBucketRequest'
+import { LongRunningHandlerRequest } from './types/LongRunningHandlerRequest'
+
+const DEFAULT_API = 'https://discord.com/api'
+const DEFAULT_VERSION = '10'
+const CLOUDFLARE_BLOCK_DURATION_MS = 1000 * 60 * 60 * 3
+const INVALID_REQUEST_BLOCK_DURATION_MS = 1000 * 60 * 10
+const LONG_RUNNING_REQUEST_DURATION_MS = 1000 * 60 * 10
 
 export type RESTHandlerOptions = {
   /**
    * Maximum number of invalid requests allowed within 10
    * minutes before delaying all further requests by
    * 10 minutes.
-   * 
+   *
    * Default is half of the hard limit, where the hard limit
    * is 10,000
    */
@@ -30,6 +35,11 @@ export type RESTHandlerOptions = {
    */
   delayOnInvalidThreshold?: boolean,
   /**
+   * Milliseconds to wait for an API request before automatically
+   * timing it out
+   */
+  requestTimeout?: number,
+  /**
    * Number of request retries on API request timeouts
    */
   requestTimeoutRetries?: number,
@@ -37,35 +47,32 @@ export type RESTHandlerOptions = {
    * Multiple of the duration to block the queue by when a global
    * limit is hit. It could be safer to block longer than what Discord
    * suggests for safety.
-   * 
+   *
    * Default is 1
    */
   globalBlockDurationMultiple?: number
   /**
    * Maximum number of requests to execute per second.
-   * 
-   * Default is 50 since it is the maximum allowed by Discord
-   * https://discord.com/developers/docs/topics/rate-limits#global-rate-limit
+   *
+   * Default is 35
    */
   maxRequestsPerSecond?: number
   /**
-   * Name of the queue to be stored in Redis
+   * Name of the queue. Retained for backwards compatibility; requests
+   * are queued in memory by @discordjs/rest.
    */
   queueName?: string
   /**
-   * Options for PQueue that holds enqueues all requests
-   * See https://github.com/sindresorhus/p-queue
+   * Retained for backwards compatibility. @discordjs/rest owns request
+   * queuing, so these options are not used.
    */
-   pqueueOptions?: Options<PriorityQueue, DefaultAddOptions>
-   /**
-    * Upon hitting the threshold for maximum invalid requests, or hitting a global rate limit via
-    * Cloudflare, clear the queue so they don't get processed. This is useful for a distributed
-    * queue where if the messages don't get acknowledged, they will go back into the queue and
-    * execution won't be duplicated in this handler, or any other handler.
-    */
-   clearQueueAfterGlobalBlock?: boolean
+  pqueueOptions?: Record<string, any>
+  /**
+   * Retained for backwards compatibility. @discordjs/rest owns request
+   * queuing, so there is no local queue to clear.
+   */
+  clearQueueAfterGlobalBlock?: boolean
 }
-
 
 declare interface RESTHandler {
   emit(event: 'globalBlock', type: GLOBAL_BLOCK_TYPE, blockedDurationMs: number, debugDetails?: Record<string, any>): boolean
@@ -109,48 +116,93 @@ declare interface RESTHandler {
   on(event: 'next', listener: (queueSize: number, pending: number) => void): this
 }
 
+interface ParsedRoute {
+  api: string
+  version: string
+  fullRoute: string
+  versioned: boolean
+}
+
+/**
+ * Split a full Discord-like URL into the pieces @discordjs/rest needs.
+ *
+ * The listener is given full URLs (which may point at a fake Discord
+ * server in tests), while @discordjs/rest expects an API base plus a
+ * versioned route.
+ */
+function parseRoute (route: string): ParsedRoute {
+  if (!/^https?:\/\//i.test(route)) {
+    return {
+      api: DEFAULT_API,
+      version: DEFAULT_VERSION,
+      fullRoute: route.startsWith('/') ? route : `/${route}`,
+      versioned: true,
+    }
+  }
+
+  const url = new URL(route)
+  const match = url.pathname.match(/^\/api(?:\/v(\d+))?(\/.*)?$/)
+
+  if (!match) {
+    return {
+      api: url.origin,
+      version: DEFAULT_VERSION,
+      fullRoute: `${url.pathname}${url.search}`,
+      versioned: false,
+    }
+  }
+
+  return {
+    api: `${url.origin}/api`,
+    version: match[1] || DEFAULT_VERSION,
+    fullRoute: `${match[2] || '/'}${url.search}`,
+    versioned: true,
+  }
+}
+
+function headersToObject (headers: any): Record<string, string> {
+  const result: Record<string, string> = {}
+  headers.forEach((value: string, key: string) => {
+    result[key] = value
+  })
+  return result
+}
+
+/**
+ * Discord sends rate limit durations as seconds. Returns -1 when the
+ * header is missing or malformed, which is how Cloudflare bans are
+ * detected on a 429 response.
+ */
+function parseSecondsToMs (value: string | null): number {
+  if (value === null) {
+    return -1
+  }
+  const parsed = Number(value)
+  if (isNaN(parsed)) {
+    return -1
+  }
+  return parsed * 1000
+}
+
 /**
  * The entry point for all requests
  */
 class RESTHandler extends EventEmitter {
   /**
-   * Buckets mapped by IDs, where the IDs are the routes
-   * themselves. This is the default bucket type that is
-   * used for every route until their actual bucket is
-   * known after a fetch.
+   * @discordjs/rest instances keyed by API base and version. Discord
+   * rate limits are scoped per API host, so each host gets its own
+   * rate limit state.
    */
-  private readonly temporaryBucketsByUrl: Map<string, Bucket> = new Map()
+  private readonly rests: Map<string, any> = new Map()
+  private readonly restOptions: Record<string, any>
   /**
-   * Buckets mapped by their IDs, where the IDs are
-   * resolved based on route major parameters and the
-   * X-RateLimit-Bucket header returned by Discord.
-   */
-  private readonly buckets: Map<string, Bucket> = new Map()
-  /**
-   * Buckets mapped by the route URLs. These buckets are
-   * considered the "true" buckets for their specified
-   * routes since their IDs were returned by Discord.
-   * 
-   * This is a convenience map that is made alongside
-   * the "buckets" instance variable whenever subsequent
-   * requests are made.
-   */
-  private readonly bucketsByUrl: Map<string, Bucket> = new Map()
-  /**
-   * Number of invalid requests made within 10 minutes. If
-   * the number of invalid requests reaches a certain hard
-   * limit (specified by Discord - currently 10,000),
-   * Discord will block the application's IP from accessing
-   * its API.
+   * Number of invalid requests made within 10 minutes
    */
   private invalidRequestsCount = 0
   /**
    * Maximum number of invalid requests allowed within 10
    * minutes before delaying all further requests by
    * 10 minutes.
-   * 
-   * Default is half the hard limit, where the hard limit
-   * is 10,000
    */
   private readonly invalidRequestsThreshold: number
   /**
@@ -159,39 +211,36 @@ class RESTHandler extends EventEmitter {
    */
   private readonly globalBlockDurationMultiple: number
   /**
-   * Stores all API requests to be executed at a maximum
-   * rate of 14 requests per second
+   * When set, all requests wait until this date before being handed
+   * to @discordjs/rest. This mirrors the previous handler's queue-wide
+   * pause during a global block.
    */
-  private readonly queue: RateLimitedQueue<{
-    id: number,
-    apiRequest: APIRequest,
-    debugHistory?: string[]
-  }, FetchResponse>;
-  /**
-   * Options for PQueue that holds enqueues all requests
-   * See https://github.com/sindresorhus/p-queue
-   */
-  pqueueOptions?: Options<PriorityQueue, DefaultAddOptions>
-  private queueBlockTimer: NodeJS.Timer|null = null;
-  private readonly userOptions: RESTHandlerOptions
   private globallyBlockedUntil?: Date
+  private queueBlockTimer: NodeJS.Timeout | null = null
+  private unblockPromise?: Promise<void>
+  private unblockResolve?: () => void
+  /**
+   * Number of requests currently being processed by this handler.
+   */
+  private inFlight = 0
 
   constructor (options?: RESTHandlerOptions) {
     super()
-    this.userOptions = options || {}
     this.invalidRequestsThreshold = options?.invalidRequestsThreshold || 5000
     this.globalBlockDurationMultiple = options?.globalBlockDurationMultiple || 1
+    this.restOptions = {
+      timeout: options?.requestTimeout || 1000 * 60,
+      retries: options?.requestTimeoutRetries ?? 3,
+      globalRequestsPerSecond: options?.maxRequestsPerSecond || 35,
+      /**
+       * A 429 without a Retry-After header is how Cloudflare bans are
+       * surfaced. Throwing instead of sleeping(0) prevents a tight retry
+       * loop until the ban is handled by the consumer.
+       */
+      rejectOnRateLimit: (data: any) => data.retryAfter <= 0,
+    }
 
-    this.queue = new RateLimitedQueue(({id, apiRequest, debugHistory}) => {
-      const bucket = this.getBucketForUrl(apiRequest.route)
-      debugHistory?.push(`p-queue job started, enqueuing into bucket ${bucket.id}`)
-
-      return bucket.enqueue(apiRequest, {
-        debugHistory
-      })
-    }, {
-      maxPerSecond: options?.maxRequestsPerSecond || 35,
-    })
+    this.getRest(DEFAULT_API, DEFAULT_VERSION)
 
     if (process.env.NODE_ENV !== 'test') {
       if (options?.delayOnInvalidThreshold !== false) {
@@ -201,8 +250,87 @@ class RESTHandler extends EventEmitter {
          */
         setInterval(() => {
           this.invalidRequestsCount = 0
-        }, 1000 * 60 * 10)
+        }, INVALID_REQUEST_BLOCK_DURATION_MS).unref()
       }
+    }
+  }
+
+  /**
+   * Get or create the @discordjs/rest instance for an API host.
+   */
+  private getRest (api: string, version: string): any {
+    const key = `${api}|v${version}`
+    let rest = this.rests.get(key)
+
+    if (!rest) {
+      rest = new discordRest.REST({
+        ...this.restOptions,
+        api,
+        version,
+      })
+      this.setupEventListeners(rest)
+      this.rests.set(key, rest)
+
+      if (this.globallyBlockedUntil) {
+        rest.globalRemaining = 0
+        rest.globalReset = this.globallyBlockedUntil.getTime()
+      }
+    }
+
+    return rest
+  }
+
+  /**
+   * Map @discordjs/rest's raw responses to this handler's events.
+   *
+   * @discordjs/rest only emits its own `rateLimited` event for requests
+   * that wait on an already-known limit, not for the initial 429. The
+   * response event fires for every attempt, so it is the reliable place
+   * to observe rate limits and invalid requests.
+   */
+  private setupEventListeners (rest: any): void {
+    rest.on(discordRest.RESTEvents.Response, (req: any, response: any) => {
+      const apiRequest = new APIRequest(req.path)
+      const status = response.status
+
+      if (status === 429) {
+        this.handleRateLimitedResponse(apiRequest, response.headers)
+        this.increaseInvalidRequestCount(apiRequest)
+      } else if (status === 401 || status === 403) {
+        this.increaseInvalidRequestCount(apiRequest)
+      }
+    })
+  }
+
+  private handleRateLimitedResponse (apiRequest: APIRequest, headers: any): void {
+    const isGlobal = headers.has('x-ratelimit-global')
+    const hasBucket = headers.has('x-ratelimit-bucket')
+    const retryAfterMs = parseSecondsToMs(headers.get('retry-after'))
+    const resetAfterMs = parseSecondsToMs(headers.get('x-ratelimit-reset-after'))
+
+    let blockedDurationMs = -1
+    if (isGlobal) {
+      blockedDurationMs = retryAfterMs
+    } else if (hasBucket) {
+      blockedDurationMs = resetAfterMs
+    }
+
+    if (blockedDurationMs === -1) {
+      // Typically when the IP has been blocked by Cloudflare. Wait 3 hours if this happens.
+      this.blockGloballyByDuration({
+        durationMs: CLOUDFLARE_BLOCK_DURATION_MS,
+        blockType: GLOBAL_BLOCK_TYPE.CLOUDFLARE_RATE_LIMIT,
+        debugDetails: {
+          headers: headersToObject(headers),
+        },
+      })
+    } else if (isGlobal) {
+      this.blockGloballyByDuration({
+        durationMs: blockedDurationMs,
+        blockType: GLOBAL_BLOCK_TYPE.GLOBAL_RATE_LIMIT,
+      })
+    } else {
+      this.emit('rateLimit', apiRequest, blockedDurationMs)
     }
   }
 
@@ -211,245 +339,208 @@ class RESTHandler extends EventEmitter {
    * requests have responses with status codes 401, 403,
    * 429.
    */
-  private increaseInvalidRequestCount () {
+  private increaseInvalidRequestCount (apiRequest: APIRequest): void {
     ++this.invalidRequestsCount
+    this.emit('invalidRequest', apiRequest, this.invalidRequestsCount)
+
     if (this.invalidRequestsCount === this.invalidRequestsThreshold) {
-      // Block all buckets from executing requests for 10 min
+      // Block all requests from executing for 10 min
       this.blockGloballyByDuration({
-        durationMs: 1000 * 60 * 10,
-        blockType: GLOBAL_BLOCK_TYPE.INVALID_REQUEST
+        durationMs: INVALID_REQUEST_BLOCK_DURATION_MS,
+        blockType: GLOBAL_BLOCK_TYPE.INVALID_REQUEST,
       })
     }
   }
 
   /**
-   * Handle events from buckets
-   */
-  private registerBucketListener (bucket: Bucket) {
-    bucket.on('recognizeURLBucket', this.recognizeURLBucket.bind(this))
-    bucket.on('globalRateLimit', (apiRequest, durationMs) => {
-      this.blockGloballyByDuration({
-        durationMs,
-        blockType: GLOBAL_BLOCK_TYPE.GLOBAL_RATE_LIMIT
-      })
-    })
-    bucket.on('rateLimit', (apiRequest: APIRequest, durationMs: number) => {
-      this.emit('rateLimit', apiRequest, durationMs)
-    })
-    bucket.on('invalidRequest', (apiRequest: APIRequest) => {
-      this.increaseInvalidRequestCount()
-      this.emit('invalidRequest', apiRequest, this.invalidRequestsCount)
-    })
-    bucket.on('cloudflareRateLimit', (apiRequest: APIRequest, durationMs, debugDetails) => {
-      this.blockGloballyByDuration({
-        durationMs,
-        blockType: GLOBAL_BLOCK_TYPE.CLOUDFLARE_RATE_LIMIT,
-        debugDetails,
-      })
-    })
-    bucket.on('LongRunningBucketRequest', details => {
-      this.emit('LongRunningBucketRequest', details)
-    })
-  }
-
-  /**
-   * Create a permanent bucket for a route
-   */
-  private createBucket (route: string, bucketId: string) {
-    const bucket = new Bucket(bucketId)
-    this.buckets.set(bucketId, bucket)
-    this.bucketsByUrl.set(route, bucket)
-    this.registerBucketListener(bucket)
-    return bucket
-  }
-
-  /**
-   * Creates a temporary bucket for a route whose bucket is unknown
-   */
-  private createTemporaryBucket (route: string) {
-    const bucket = new Bucket(route)
-    this.temporaryBucketsByUrl.set(route, bucket)
-    this.registerBucketListener(bucket)
-    return bucket
-  }
-
-  /**
-   * Removes a temporary bucket, and copies its rate limit settings
-   * to the other bucket
-   */
-  private scheduleTemporaryBucketRemoval (route: string, newBucket: Bucket) {
-    const tempBucket = this.temporaryBucketsByUrl.get(route)
-    if (tempBucket) {
-      // Wait for the bucket's queue to be empty for remaining requests
-      tempBucket.once('finishedAll', () => {
-        tempBucket.removeAllListeners()
-        // Copy the bucket block over to the new bucket if it exists
-        tempBucket.copyBlockTo(newBucket)
-        this.temporaryBucketsByUrl.delete(route)
-      })
-    }
-  }
-
-  /**
-   * Create a bucket for a new URL, or map a
-   * url to its bucket if it exists for later reference
-   */
-  private recognizeURLBucket (route: string, bucketID: string) {
-    if (!this.bucketExists(bucketID)) {
-      const newBucket = this.createBucket(route, bucketID)
-      // Remove the temporary bucket since it has a bucket ID assigned
-      this.scheduleTemporaryBucketRemoval(route, newBucket)
-    } else if (!this.bucketExistsForURL(route)) {
-      const bucket = this.buckets.get(bucketID)
-      this.bucketsByUrl.set(route, bucket as Bucket)
-    }
-  }
-
-  /**
-   * Blocks all queued API requests and buckets for a duration
+   * Blocks all queued API requests for a duration.
    * If there's already a timer, the previous timer is cleared
-   * and is recreated
+   * and is recreated.
    */
-     private blockGloballyByDuration ({
-       durationMs,
-       blockType,
-       debugDetails
-     }: {
-       durationMs: number,
-       blockType: GLOBAL_BLOCK_TYPE,
-       debugDetails?: Record<string, any>
-     }) {
-      const blockDuration = durationMs * this.globalBlockDurationMultiple
-      this.blockBucketsByDuration(blockDuration)
+  private blockGloballyByDuration ({
+    durationMs,
+    blockType,
+    debugDetails,
+  }: {
+    durationMs: number,
+    blockType: GLOBAL_BLOCK_TYPE,
+    debugDetails?: Record<string, any>
+  }): void {
+    const blockDuration = durationMs * this.globalBlockDurationMultiple
+    this.blockBucketsByDuration(blockDuration)
 
-      if (this.queueBlockTimer) {
-        clearTimeout(this.queueBlockTimer)
-      }
-      
-      this.queue.pause()
-
-      if (this.userOptions.clearQueueAfterGlobalBlock && blockType === GLOBAL_BLOCK_TYPE.CLOUDFLARE_RATE_LIMIT) {
-        // Other rate limits generally have short retry times. Only Cloudflare will generally have 1+ hour bans
-        this.clearBuckets()
-      }
-
-      this.globallyBlockedUntil = dayjs().add(blockDuration, 'ms').toDate()
-      this.emit('globalBlock', blockType, blockDuration, debugDetails)
-
-      this.queueBlockTimer = setTimeout(() => {
-        this.queue.start()
-        this.queueBlockTimer = null
-        this.globallyBlockedUntil = undefined
-        this.emit('globalRestore', blockType)
-      }, blockDuration)
+    if (this.queueBlockTimer) {
+      clearTimeout(this.queueBlockTimer)
     }
 
+    /**
+     * Release anyone waiting on the previous block so they re-check
+     * the new block duration.
+     */
+    if (this.unblockResolve) {
+      this.unblockResolve()
+    }
+
+    this.globallyBlockedUntil = new Date(Date.now() + blockDuration)
+    this.unblockPromise = new Promise((resolve) => {
+      this.unblockResolve = resolve
+    })
+
+    this.emit('globalBlock', blockType, blockDuration, debugDetails)
+
+    this.queueBlockTimer = setTimeout(() => {
+      this.queueBlockTimer = null
+      this.globallyBlockedUntil = undefined
+      const resolve = this.unblockResolve
+      this.unblockPromise = undefined
+      this.unblockResolve = undefined
+      resolve?.()
+      this.emit('globalRestore', blockType)
+    }, blockDuration)
+  }
+
   /**
-   * Block all buckets from running, or override buckets'
-   * own timers if it's longer with the specified
-   * duration
+   * Block @discordjs/rest's global rate limit state for a duration.
    */
   public blockBucketsByDuration (durationMs: number): void {
-    this.buckets.forEach((bucket) => {
-      const blockedUntil = bucket.blockedUntil
-      if (!blockedUntil) {
-        // Block the bucket if it's not blocked
-        bucket.block(durationMs)
-      } else {
-        const now = new Date().getTime()
-        const globalBlockUntil = new Date(now + durationMs)
-        // Choose the longer duration for blocking
-        if (globalBlockUntil > blockedUntil) {
-          bucket.block(durationMs)
-        }
-      }
-    })
-  }
-
-  public clearBuckets(): void {
-    this.buckets.forEach((bucket) => {
-      bucket.clear()
+    const blockedUntil = Date.now() + durationMs
+    this.rests.forEach((rest) => {
+      rest.globalRemaining = 0
+      rest.globalReset = Math.max(rest.globalReset || 0, blockedUntil)
     })
   }
 
   /**
-   * Check if a permanent bucket exists by ID
+   * Wait for an active global block to expire before executing.
    */
-  private bucketExists (bucketId: string) {
-    return this.buckets.has(bucketId)
-  }
-
-  /**
-   * Check if a permanent bucket exists for a route
-   */
-  private bucketExistsForURL (route: string) {
-    return this.bucketsByUrl.has(route)
-  }
-
-  /**
-   * Gets the bucket assigned for a URL.
-   */
-  private getBucketForUrl (url: string) {
-    const bucket = this.bucketsByUrl.get(url)
-    if (bucket) {
-      // Return the temporary bucket if there are enqueued items to maintain order
-      // The temporary bucket will eventually be removed once the queue is empty
-      const temporaryBucket = this.temporaryBucketsByUrl.get(url)
-      if (temporaryBucket && temporaryBucket.hasPendingRequests()) {
-        return temporaryBucket
+  private async waitForGlobalBlock (): Promise<void> {
+    while (this.globallyBlockedUntil && this.globallyBlockedUntil.getTime() > Date.now()) {
+      const promise = this.unblockPromise
+      if (!promise) {
+        return
       }
-      return bucket
-    } else {
-      const temporaryBucket = this.temporaryBucketsByUrl.get(url)
-      if (!temporaryBucket) {
-        return this.createTemporaryBucket(url)
-      } else {
-        return temporaryBucket
-      }
+      await promise
     }
   }
 
   /**
    * Fetch a resource from Discord's API
-   * 
+   *
    * @param route The full HTTP route string
-   * @param options node-fetch options
-   * @returns node-fetch response
+   * @param options Request options
+   * @returns Fetch response
    */
-  public async fetch (route: string, options: RequestOptions): Promise<FetchResponse> {
-    
-    const { requestTimeoutRetries } = this.userOptions
-    const apiRequest = new APIRequest(route, {
-      maxRetries: requestTimeoutRetries,
-      ...options,
-    })
-    const url = apiRequest.route
-    const bucket = this.getBucketForUrl(url)
+  public async fetch (route: string, options: RequestOptions = {}): Promise<FetchResponse> {
+    const parsed = parseRoute(route)
+    const apiRequest = new APIRequest(route, options)
+    const rest = this.getRest(parsed.api, parsed.version)
+    const method = (options.method || 'GET').toUpperCase()
 
-    
+    // @discordjs/rest serializes object bodies as JSON. Requests from the
+    // producer carry a JSON string, so parse it back into an object. If it
+    // is not JSON, send the raw string through unchanged.
+    let body: any = options.body
+    let passThroughBody: boolean | undefined
+    if (typeof body === 'string') {
+      try {
+        body = JSON.parse(body)
+      } catch {
+        passThroughBody = true
+      }
+    }
+
+    let requestStarted = false
+
     const longRunningTimeout = setTimeout(() => {
-      this.emit('longRunningHandlerRequest', {
-        executedApiRequest: apiRequest.hasSucceeded() !== undefined,
-        globalBlockedUntil: this.globallyBlockedUntil || null,
-        globalQueueLength: this.queue.size
+      this.emit('LongRunningBucketRequest', {
+        bucketBlockedUntil: this.globallyBlockedUntil || null,
+        bucketId: parsed.fullRoute,
+        bucketQueueLength: 0,
+        executedApiRequest: requestStarted,
       })
-    }, 1000 * 60 * 10)
+      this.emit('longRunningHandlerRequest', {
+        executedApiRequest: requestStarted,
+        globalBlockedUntil: this.globallyBlockedUntil || null,
+        globalQueueLength: this.inFlight,
+      })
+    }, LONG_RUNNING_REQUEST_DURATION_MS)
 
     const longRunningInterval = setInterval(() => {
-      options.debugHistory?.push(`Current queue length: ${this.queue.size}. Current pending: ${this.queue.pending}.  Current block ${(this.globallyBlockedUntil?.getTime() || 0) / 1000}, paused: ${this.queue.isPaused}. Time: ${dayjs().tz('America/New_York').format('HH:mm:ss')}. Executed fetch: ${apiRequest.hasSucceeded()}.`)
-    }, 1000  * 60)
-    
-    options.debugHistory?.push(`Retrieved bucket ${bucket.id}, adding to global queue. Current queue length: ${this.queue.size}, pending: ${this.queue.pending}. Current block ${(this.globallyBlockedUntil?.getTime() || 0) / 1000}`)
+      options.debugHistory?.push(`Current in-flight requests: ${this.inFlight}. Current block ${(this.globallyBlockedUntil?.getTime() || 0) / 1000}. Time: ${new Date().toISOString()}. Route: ${apiRequest.toString()}`)
+    }, 1000 * 60)
 
-    const result = await this.queue.add({
-      id: apiRequest.id,
-      apiRequest,
-      debugHistory: options.debugHistory,
+    this.inFlight++
+    if (this.inFlight === 1) {
+      this.emit('active')
+    }
+
+    try {
+      await this.waitForGlobalBlock()
+
+      requestStarted = true
+      const response = await rest.queueRequest({
+        fullRoute: parsed.fullRoute,
+        method,
+        body,
+        passThroughBody,
+        headers: options.headers,
+        auth: false,
+        versioned: parsed.versioned,
+      })
+
+      return await this.wrapResponse(response)
+    } catch (err) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const error = err as any
+      if (error instanceof discordRest.DiscordAPIError || error?.name === 'DiscordAPIError') {
+        // Preserve the previous behavior where callers receive the raw
+        // response for non-2xx status codes instead of an exception.
+        return this.createSyntheticResponse(error.status, error.rawError)
+      }
+      if (error instanceof discordRest.HTTPError || error?.name === 'HTTPError') {
+        return this.createSyntheticResponse(error.status, {
+          message: error.statusText || error.message,
+        })
+      }
+      throw err
+    } finally {
+      clearTimeout(longRunningTimeout)
+      clearInterval(longRunningInterval)
+      this.inFlight--
+      this.emit('next', 0, this.inFlight)
+      if (this.inFlight === 0) {
+        this.emit('idle')
+      }
+    }
+  }
+
+  private async wrapResponse (response: any): Promise<FetchResponse> {
+    const body = await response.text()
+    const headers: Record<string, string> = {}
+    response.headers.forEach((value: string, key: string) => {
+      headers[key] = value
     })
 
-    clearTimeout(longRunningTimeout)
-    clearInterval(longRunningInterval)
-    return result
+    return {
+      status: response.status,
+      headers,
+      json: async () => JSON.parse(body),
+      text: async () => body,
+    }
+  }
+
+  private createSyntheticResponse (status: number, body: unknown): FetchResponse {
+    const serialized = JSON.stringify(body)
+    const text = serialized === undefined ? '' : serialized
+
+    return {
+      status,
+      headers: {
+        'content-type': 'application/json',
+      },
+      json: async () => body,
+      text: async () => text,
+    }
   }
 }
 
