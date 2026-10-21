@@ -5,10 +5,7 @@ import { QUEUE_PRIORITY } from './constants/queue-priority';
 import dayjs from 'dayjs'
 import utc from 'dayjs/plugin/utc'
 import EventEmitter from 'events';
-import { RequestInit } from 'undici';
-import amqp from 'amqp-connection-manager'
-import { IAmqpConnectionManager } from 'amqp-connection-manager/dist/esm/AmqpConnectionManager';
-import ChannelWrapper from 'amqp-connection-manager/dist/esm/ChannelWrapper';
+import amqp, { AmqpConnectionManager, ChannelWrapper } from 'amqp-connection-manager'
 import { Channel } from 'amqplib';
 
 dayjs.extend(utc)
@@ -38,7 +35,7 @@ declare interface RESTProducer {
 }
 
 class RESTProducer extends EventEmitter {
-  connection: IAmqpConnectionManager;
+  connection: AmqpConnectionManager;
   channelWrapper: ChannelWrapper;
   rpcReplyEmitter = new EventEmitter()
 
@@ -128,7 +125,7 @@ class RESTProducer extends EventEmitter {
    */
   public async fetch<JSONResponse>(
     route: string,
-    options: RequestInit = {},
+    options: RequestOptions = {},
     meta?: Record<string, unknown>
   ): Promise<JobResponse<JSONResponse> | JobResponseError> {
     if (!route) {

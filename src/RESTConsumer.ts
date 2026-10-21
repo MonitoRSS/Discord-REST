@@ -11,7 +11,6 @@ import { FetchResponse } from "./types/FetchResponse";
 import { LongRunningBucketRequest } from "./types/LongRunningBucketRequest";
 import { LongRunningHandlerRequest } from "./types/LongRunningHandlerRequest";
 import { AbortError } from "./errors/AbortError";
-import { RequestInit } from "undici";
 dayjs.extend(utc)
 
 interface ConsumerOptions {
@@ -44,7 +43,10 @@ interface ConsumerOptions {
   singleActiveConsumer?: boolean
 }
 
-interface RequestOptions extends RequestInit {
+interface RequestOptions {
+  method?: string
+  body?: string
+  headers?: Record<string, string>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   [key: string]: any;
 }
@@ -91,7 +93,7 @@ declare interface RESTConsumer {
   on(event: 'idle'|'active', listener: () => void): this
   on(event: 'jobCompleted', listener: (job: JobData, result: JobResponse<Record<string, unknown>>) => void): this
   on(event: 'LongRunningBucketRequest', listener: (details: LongRunningBucketRequest) => void): this
-  on(event: 'LongRunningHandlerRequest', listener: (details: LongRunningHandlerRequest) => void): this
+  on(event: 'longRunningHandlerRequest', listener: (details: LongRunningHandlerRequest) => void): this
   on(event: 'next', listener: (queueSize: number, pending: number) => void): this
 }
 
@@ -108,7 +110,7 @@ class RESTConsumer extends EventEmitter {
   public handler: RESTHandler | null = null
 
   private rabbitmq: {
-    connection: amqp.Connection,
+    connection: amqp.ChannelModel,
     channel: amqp.Channel,
     consumerTag?: string
     rpcConsumerTag?: string
@@ -333,8 +335,6 @@ class RESTConsumer extends EventEmitter {
       } as JobResponseError
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    
     try {
       response = {
         ...await this.processJobData(data),

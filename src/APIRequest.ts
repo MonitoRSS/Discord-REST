@@ -1,27 +1,12 @@
-import { request } from 'undici'
-import { FetchResponse } from './types/FetchResponse';
-import retry from 'retry'
-import pTimeout from 'p-timeout';
-
-type RequestOptions = {
-  /**
-   * Maximum number of retries before rejecting. By default, 10.
-   */
-  maxRetries?: number
-  method?: 'POST'|'GET'|'PATCH'|'PUT'
-  body?: string
-  headers?: Record<string, string>
-}
-
 class APIRequest {
   /**
    * Full API request URL
    */
   readonly route: string
   /**
-   * node-fetch options
+   * Request options
    */
-  readonly options?: RequestInit
+  readonly options?: Record<string, any>
   /**
    * ID used to track the completion of every request
    */
@@ -30,81 +15,11 @@ class APIRequest {
    * Auto-incrementing ID for every request
    */
   static lastId = 0
-  /**
-   * If the fetch has been done or not. Value is true if fetch succeeded, false if it did not, or
-   * undefined if fetch has not been executed
-   */
-  private fetchSuccess: boolean|undefined = undefined
 
-
-  constructor (route: string, private readonly requestOptions?: RequestOptions) {
+  constructor (route: string, options?: Record<string, any>) {
     this.route = route
+    this.options = options
     this.id = ++APIRequest.lastId
-  }
-
-  /**
-   * Execute the request with a timeout
-   */
-  async execute (options?: {
-    baseAttemptDelay?: number,
-  }): Promise<FetchResponse> {
-    const maxRetries = this.requestOptions?.maxRetries ?? 10
-    const operation = retry.operation({
-      minTimeout: options?.baseAttemptDelay,
-      retries: maxRetries,
-    });
-
-    return pTimeout(new Promise<FetchResponse>((resolve, reject) => {
-      operation.attempt(async () => {
-        try {
-          const res = await this.sendFetch()
-
-          let operationError: Error | undefined = undefined;
-          if (res.status === 422 || res.status >= 500) {
-            operationError = new Error(`Bad status code (${res.status})`)
-          }
-
-          if (!operation.retry(operationError)) {
-            return resolve(res)
-          }
-
-        } catch (err) {
-          if (!operation.retry(err as Error)) {
-            reject(err)
-          }
-        }
-      })
-    }), 1000 * 60 * 5)
-  }
-
-  async sendFetch(): Promise<FetchResponse> {
-    try {
-      const res = await request(this.route, {
-        method: this.requestOptions?.method || 'GET',
-        body: this.requestOptions?.body,
-        headers: this.requestOptions?.headers,
-        bodyTimeout: 1000 * 60,
-        headersTimeout: 1000 * 60,
-        maxRedirections: 10,
-      })
-
-      this.fetchSuccess = true
-
-      return {
-        json: async () => res.body.json(),
-        text: async () => res.body.text(),
-        headers: res.headers,
-        status: res.statusCode
-      }
-    }
-    catch (e) { 
-      this.fetchSuccess = false
-      throw e
-    }
-  }
-
-  hasSucceeded(): boolean|undefined {
-    return this.fetchSuccess
   }
 
   /**
